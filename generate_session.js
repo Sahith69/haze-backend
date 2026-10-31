@@ -25,7 +25,15 @@ async function main() {
     await client.start({
         phoneNumber: async () => await question('📱 Enter your phone number (with country code, e.g. +91...): '),
         password: async () => await question('🔑 Enter your 2FA password (leave empty if none): '),
-        phoneCode: async () => await question('📩 Enter the 5-digit login code from your Telegram app: '),
+        phoneCode: async (isCodeViaApp) => {
+            if (isCodeViaApp) {
+                console.log('\n🔔 The code was sent directly inside your TELEGRAM APP (not SMS)!');
+                console.log('👉 Open your Telegram app and look for the chat from official "Telegram" (with the blue checkmark).\n');
+            } else {
+                console.log('\n📲 The code was sent via SMS.\n');
+            }
+            return await question('📩 Enter the 5-digit login code: ');
+        },
         onError: (err) => console.error('Authentication Error:', err.message),
     });
 

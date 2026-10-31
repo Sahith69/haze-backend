@@ -219,6 +219,10 @@ function parseLrc(lrcText = '') {
     return result.sort((a, b) => a.time - b.time);
 }
 
+app.get(['/health', '/api/health'], (req, res) => {
+    res.json({ status: 'ok', uptime: Math.round(process.uptime()), timestamp: new Date().toISOString() });
+});
+
 /**
  * 1. Search tracks & albums via JioSaavn + iTunes
  */

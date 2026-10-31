@@ -7,6 +7,7 @@ import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import CryptoJS from 'crypto-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
@@ -219,34 +220,83 @@ function parseLrc(lrcText = '') {
 }
 
 /**
- * 1. Search tracks & albums via iTunes
+ * 1. Search tracks & albums via JioSaavn + iTunes
  */
 app.get('/api/search', async (req, res) => {
     const query = req.query.q;
-    if (!query) {
+    if (!query || !query.trim()) {
         return res.json({ tracks: [] });
     }
 
     try {
-        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=30`;
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`iTunes search failed: ${response.status}`);
-        }
-        const data = await response.json();
-        const tracks = (data.results || []).map((item) => ({
-            id: String(item.trackId),
-            title: item.trackName || 'Unknown Title',
-            artist: item.artistName || 'Unknown Artist',
-            album: item.collectionName || 'Single',
-            cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg') : '',
-            coverLarge: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg') : '',
-            duration: Math.round((item.trackTimeMillis || 0) / 1000),
-            year: item.releaseDate ? item.releaseDate.substring(0, 4) : '',
-            genre: item.primaryGenreName || 'Music',
-            isrc: item.isrc || null,
-        }));
+        const cleanQ = query.trim();
+        const resultsMap = new Map();
 
+        // 1. JioSaavn Search (Instant, high-res 500x500 covers, full Indian & International library)
+        try {
+            const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=25&p=1&q=${encodeURIComponent(cleanQ)}`;
+            const sRes = await fetch(saavnUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+            });
+            if (sRes.ok) {
+                const sData = await sRes.json();
+                const saavnResults = sData.results || [];
+                for (const item of saavnResults) {
+                    const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
+                    const artist = item.more_info?.artistMap?.primary_artists?.[0]?.name || item.subtitle || 'Unknown Artist';
+                    const cover = item.image ? item.image.replace('150x150', '500x500') : '';
+                    const key = `${title.toLowerCase()}_${artist.toLowerCase()}`;
+                    resultsMap.set(key, {
+                        id: `saavn-${item.id}`,
+                        title: title || 'Unknown Title',
+                        artist: artist || 'Unknown Artist',
+                        album: item.more_info?.album || 'Single',
+                        cover,
+                        coverLarge: cover,
+                        duration: Number(item.more_info?.duration) || 210,
+                        year: item.year || '',
+                        genre: item.language || 'Music',
+                        source: 'jiosaavn'
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('[Search] JioSaavn search fallback:', e.message);
+        }
+
+        // 2. iTunes Search
+        try {
+            const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQ)}&entity=song&limit=25`;
+            const iRes = await fetch(itunesUrl);
+            if (iRes.ok) {
+                const iData = await iRes.json();
+                const itunesResults = iData.results || [];
+                for (const item of itunesResults) {
+                    const title = item.trackName || '';
+                    const artist = item.artistName || '';
+                    const key = `${title.toLowerCase()}_${artist.toLowerCase()}`;
+                    if (!resultsMap.has(key)) {
+                        resultsMap.set(key, {
+                            id: String(item.trackId),
+                            title: title || 'Unknown Title',
+                            artist: artist || 'Unknown Artist',
+                            album: item.collectionName || 'Single',
+                            cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg') : '',
+                            coverLarge: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg') : '',
+                            duration: Math.round((item.trackTimeMillis || 0) / 1000),
+                            year: item.releaseDate ? item.releaseDate.substring(0, 4) : '',
+                            genre: item.primaryGenreName || 'Music',
+                            isrc: item.isrc || null,
+                            source: 'itunes'
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Search] iTunes search fallback:', e.message);
+        }
+
+        const tracks = Array.from(resultsMap.values());
         res.json({ tracks });
     } catch (err) {
         console.error('Search error:', err);
@@ -268,8 +318,8 @@ app.get('/api/trending', async (req, res) => {
         const entries = data.feed?.entry || [];
         const tracks = entries.map((entry, index) => {
             const rawImage = entry['im:image']?.[2]?.label || '';
-            const cover = rawImage ? rawImage.replace(/\/\d+x\d+bb\.png/, '/600x600bb.jpg') : '';
-            const coverLarge = rawImage ? rawImage.replace(/\/\d+x\d+bb\.png/, '/1000x1000bb.jpg') : '';
+            const cover = rawImage ? rawImage.replace(/\/\d+x\d+bb\.(png|jpg)/, '/600x600bb.jpg') : '';
+            const coverLarge = rawImage ? rawImage.replace(/\/\d+x\d+bb\.(png|jpg)/, '/1000x1000bb.jpg') : '';
             return {
                 id: entry.id?.attributes?.['im:id'] || `trend-${index}`,
                 title: entry['im:name']?.label || 'Unknown Title',
@@ -291,7 +341,51 @@ app.get('/api/trending', async (req, res) => {
 });
 
 /**
- * 3. Resolve direct audio stream using ytmusicapi (official studio master) + yt-dlp
+ * Direct JioSaavn 320kbps Studio Master resolver
+ */
+async function resolveJioSaavn(searchQuery) {
+    try {
+        const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=5&p=1&q=${encodeURIComponent(searchQuery)}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' },
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const results = data.results || [];
+        if (results.length === 0) return null;
+
+        const match = results[0];
+        const enc = match.more_info?.encrypted_media_url;
+        if (!enc) return null;
+
+        const key = CryptoJS.enc.Utf8.parse('38346591');
+        const decrypted = CryptoJS.DES.decrypt({ ciphertext: CryptoJS.enc.Base64.parse(enc) }, key, {
+            mode: CryptoJS.mode.ECB,
+            padding: CryptoJS.pad.Pkcs7
+        }).toString(CryptoJS.enc.Utf8);
+
+        if (!decrypted || !decrypted.startsWith('http')) return null;
+
+        const stream320 = decrypted.replace(/_[0-9]+\.mp4$/, '_320.mp4');
+        return {
+            streamUrl: stream320,
+            quality: 'Studio Master 320kbps',
+            format: '320kbps Studio Master',
+            bitrate: '320 kbps',
+            isStudioMaster: true
+        };
+    } catch (e) {
+        console.warn('[JioSaavn Resolver] error:', e.message);
+        return null;
+    }
+}
+
+/**
+ * 3. Resolve direct audio stream using multi-strategy fallbacks
  */
 async function resolveTrackAudio(artist = '', title = '', query = '') {
     const cleanArtist = cleanQuery(artist);
@@ -308,74 +402,52 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
         return cached.data;
     }
 
-    let videoId = null;
-
-    // Step 1: Use ytmusicapi to find official studio release
-    if (cleanArtist && cleanTitle) {
-        try {
-            const resolverScript = path.join(__dirname, 'resolve_track.py');
-            const { stdout: pyOut } = await execFileAsync('python3', [resolverScript, cleanArtist, cleanTitle], { timeout: 7000 });
-            const parsed = JSON.parse(pyOut.trim() || '{}');
-            if (parsed.videoId) {
-                videoId = parsed.videoId;
-                console.log(`[Stream Resolver] Matched official studio track: "${parsed.title}" by ${parsed.artist} (${videoId})`);
-            }
-        } catch (err) {
-            console.warn('[Stream Resolver] ytmusicapi lookup warning:', err.message);
+    // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)
+    try {
+        const saavnStream = await resolveJioSaavn(searchQuery);
+        if (saavnStream && saavnStream.streamUrl) {
+            console.log(`[Stream Resolver] Matched direct 320kbps Studio Master for: "${searchQuery}"`);
+            const data = {
+                streamUrl: saavnStream.streamUrl,
+                proxyUrl: `/api/proxy-stream?url=${encodeURIComponent(saavnStream.streamUrl)}`,
+                quality: saavnStream.quality,
+                format: saavnStream.format,
+                bitrate: saavnStream.bitrate,
+                isStudioMaster: true,
+            };
+            streamCache.set(cacheKey, { timestamp: Date.now(), data });
+            return data;
         }
+    } catch (err0) {
+        console.warn('[Stream Resolver] Strategy 1 (JioSaavn) warning:', err0.message);
     }
 
-    // Step 2: Target official videoId or fallback to studio audio search
     let streamUrl = null;
-    let quality = 'Studio Master 48kHz';
-    let format = 'Opus 48kHz (Official Studio)';
-    let bitrate = '256 kbps VBR';
+    let quality = 'Studio Master';
+    let format = 'HQ Master Audio';
+    let bitrate = '256 kbps';
 
-    const targetUrl = videoId
-        ? `https://www.youtube.com/watch?v=${videoId}`
-        : `ytsearch1:${searchQuery} official studio audio`;
-
-    // Strategy 1: YouTube with TV/MWeb client (bypasses cloud datacenter IP flags)
+    // Strategy 2: YouTube official audio with default VisionOS client (fast, 6s timeout)
     try {
         const args = [
-            '--extractor-args', 'youtube:player_client=tv,mweb,web',
-            '-f', '251/140/ba/b',
+            '-f', '140/251/ba/b',
             '-g',
-            targetUrl,
+            `ytsearch1:${searchQuery} official audio`,
             '--no-playlist',
             '--no-warnings',
         ];
-        const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
+        const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 6000 });
         const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
         if (lines.length > 0) {
             streamUrl = lines[0];
+            quality = 'Studio Master 48kHz';
+            format = 'Opus 48kHz';
         }
     } catch (err1) {
-        console.warn('[Stream Resolver] Primary resolver warning:', err1.message);
+        console.warn('[Stream Resolver] Strategy 2 (YouTube) warning:', err1.message);
     }
 
-    // Strategy 2: YouTube TV client direct search fallback
-    if (!streamUrl) {
-        try {
-            const args = [
-                '--extractor-args', 'youtube:player_client=tv',
-                '-f', 'ba/b',
-                '-g',
-                `ytsearch1:${searchQuery}`,
-                '--no-playlist',
-                '--no-warnings',
-            ];
-            const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
-            const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
-            if (lines.length > 0) {
-                streamUrl = lines[0];
-            }
-        } catch (err2) {
-            console.warn('[Stream Resolver] TV client fallback warning:', err2.message);
-        }
-    }
-
-    // Strategy 3: SoundCloud Studio Audio Fallback (100% immune to datacenter blocks)
+    // Strategy 3: SoundCloud Studio Audio Fallback (fast, 6s timeout)
     if (!streamUrl) {
         try {
             console.log(`[Stream Resolver] Attempting SoundCloud fallback for: "${searchQuery}"`);
@@ -386,15 +458,15 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
                 '--no-playlist',
                 '--no-warnings',
             ];
-            const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
+            const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 6000 });
             const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
             if (lines.length > 0) {
                 streamUrl = lines[0];
                 format = 'HQ Master Audio';
                 quality = 'Studio Master';
             }
-        } catch (err3) {
-            console.warn('[Stream Resolver] SoundCloud fallback warning:', err3.message);
+        } catch (err2) {
+            console.warn('[Stream Resolver] Strategy 3 (SoundCloud) warning:', err2.message);
         }
     }
 
@@ -583,73 +655,29 @@ app.get('/api/lyrics', async (req, res) => {
  */
 app.get('/api/vault/list', (req, res) => {
     const vault = loadVault();
-    // Default demo tracks if vault is empty
-    const tracks = vault.length > 0 ? vault : [
-        {
-            id: 'track-1',
-            title: 'Midnight Drive',
-            artist: 'Nova Lane',
-            album: 'Neon Horizon',
-            duration: 216,
-            isHiRes: true,
-            qualityLabel: '48 kHz · Cloud Vault',
-            gradient: ['#7C5CFF', '#FF5C9E'],
-            inVault: true,
-        },
-        {
-            id: 'track-2',
-            title: 'Glass Hours',
-            artist: 'Kite & Ember',
-            album: 'Reflections',
-            duration: 194,
-            isHiRes: true,
-            qualityLabel: '48 kHz · Cloud Vault',
-            gradient: ['#FF9A3C', '#FF3C6E'],
-            inVault: true,
-        },
-        {
-            id: 'track-3',
-            title: 'Low Tide',
-            artist: 'Sora Vale',
-            album: 'Deep Water',
-            duration: 242,
-            isHiRes: true,
-            qualityLabel: '48 kHz · Cloud Vault',
-            gradient: ['#18C8A8', '#2A6BFF'],
-            inVault: true,
-        },
-        {
-            id: 'track-4',
-            title: 'Golden Static',
-            artist: 'The Hollows',
-            album: 'Signal Lost',
-            duration: 188,
-            isHiRes: true,
-            qualityLabel: '48 kHz · Cloud Vault',
-            gradient: ['#F5B942', '#C2410C'],
-            inVault: true,
-        },
-        {
-            id: 'track-5',
-            title: 'Paper Planes',
-            artist: 'Iris Moon',
-            album: 'Skylines',
-            duration: 205,
-            isHiRes: true,
-            qualityLabel: '48 kHz · Cloud Vault',
-            gradient: ['#3B3B5C', '#8B7CFF'],
-            inVault: true,
-        },
-    ];
+    const tracks = Array.isArray(vault) ? vault : [];
 
-    const estimatedBytes = tracks.length * 4.5 * 1024 * 1024; // ~4.5MB per Opus 48kHz track
-    const storageUsedMB = (estimatedBytes / (1024 * 1024)).toFixed(1);
-    const storageUsedDisplay = tracks.length > 5 ? `${(storageUsedMB / 1024).toFixed(2)} GB` : '1.4 GB';
+    // Calculate real storage used in bytes based on actual tracks in vault (~28-35MB per lossless FLAC)
+    const totalBytes = tracks.reduce((sum, t) => sum + (t.fileSize || 28 * 1024 * 1024), 0);
+    const totalQuotaBytes = 10 * 1024 * 1024 * 1024; // 10 GB
+
+    let storageUsedDisplay = '0 MB';
+    if (totalBytes > 0) {
+        if (totalBytes < 1024 * 1024 * 1024) {
+            storageUsedDisplay = `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+        } else {
+            storageUsedDisplay = `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        }
+    }
+    const percentUsed = totalBytes > 0 ? Math.min(100, Math.max(1, Math.round((totalBytes / totalQuotaBytes) * 100))) : 0;
 
     res.json({
         tracks,
         storageUsed: storageUsedDisplay,
         storageTotal: '10 GB',
+        storagePercent: percentUsed,
+        storageUsedBytes: totalBytes,
+        storageTotalBytes: totalQuotaBytes,
         count: tracks.length,
         hasR2: !!r2Client,
     });

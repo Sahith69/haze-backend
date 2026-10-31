@@ -46,12 +46,19 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 const TELEGRAM_API_ID = process.env.TELEGRAM_API_ID || '19300364';
 const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH || '';
+const TELEGRAM_USER_SESSION = process.env.TELEGRAM_USER_SESSION || '';
 const AUTO_ARCHIVE_TG = process.env.AUTO_ARCHIVE_TG !== 'false';
 
 if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
     console.log('[Telegram FLAC Vault] Connected to Telegram channel:', TELEGRAM_CHAT_ID);
 } else {
     console.log('[Telegram FLAC Vault] Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Render to auto-archive FLACs.');
+}
+
+if (TELEGRAM_USER_SESSION) {
+    console.log('[Telegram Userbot] Userbot session configured for automated FLAC scraping.');
+} else {
+    console.log('[Telegram Userbot] Run "node generate_session.js" to enable automated bot-to-bot FLAC fetching.');
 }
 
 // GramJS MTProto Client for Telegram streaming with zero 20 MB cap
@@ -86,6 +93,100 @@ async function getTelegramClient() {
     } finally {
         tgClientConnecting = false;
     }
+}
+
+// GramJS User Client for automated bot-to-bot interaction
+let tgUserClient = null;
+let tgUserConnecting = false;
+
+async function getTelegramUserClient() {
+    if (tgUserClient) return tgUserClient;
+    if (!TELEGRAM_USER_SESSION) return null;
+    if (tgUserConnecting) {
+        for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            if (tgUserClient) return tgUserClient;
+        }
+    }
+
+    tgUserConnecting = true;
+    try {
+        const apiIdNum = parseInt(TELEGRAM_API_ID, 10) || 19300364;
+        const client = new TelegramClient(new StringSession(TELEGRAM_USER_SESSION), apiIdNum, TELEGRAM_API_HASH, {
+            connectionRetries: 5,
+        });
+        await client.connect();
+        tgUserClient = client;
+        console.log('[GramJS Userbot] User account connected via MTProto successfully!');
+        return tgUserClient;
+    } catch (e) {
+        console.warn('[GramJS Userbot] User client connection error:', e.message);
+        return null;
+    } finally {
+        tgUserConnecting = false;
+    }
+}
+
+/**
+ * Automatically request FLAC from Telegram music bots and forward to private channel
+ */
+const flacFetchingSet = new Set();
+async function fetchFlacFromTelegramBot(track) {
+    if (!TELEGRAM_USER_SESSION || !TELEGRAM_CHAT_ID) return null;
+    const userClient = await getTelegramUserClient();
+    if (!userClient) return null;
+
+    const queryKey = `${track.artist} - ${track.title}`.trim();
+    if (flacFetchingSet.has(queryKey)) return null;
+    flacFetchingSet.add(queryKey);
+
+    console.log(`[Telegram Userbot] Requesting FLAC for "${queryKey}" from music downloader bot...`);
+
+    try {
+        const targetBot = '@deezload2bot';
+        await userClient.sendMessage(targetBot, { message: queryKey });
+
+        const startTime = Date.now();
+        let flacMessage = null;
+
+        while (Date.now() - startTime < 15000) {
+            await new Promise(r => setTimeout(r, 2000));
+            const recent = await userClient.getMessages(targetBot, { limit: 5 });
+            for (const m of recent) {
+                if (m.date * 1000 >= startTime - 1000 && m.media && m.media.document) {
+                    const doc = m.media.document;
+                    const isAudio = doc.mimeType?.startsWith('audio/') || doc.attributes?.some(a => a.className === 'DocumentAttributeAudio');
+                    if (isAudio) {
+                        flacMessage = m;
+                        break;
+                    }
+                }
+            }
+            if (flacMessage) break;
+        }
+
+        if (flacMessage) {
+            console.log(`[Telegram Userbot] Received audio file from ${targetBot}! Forwarding to private channel ${TELEGRAM_CHAT_ID}...`);
+            const forwarded = await userClient.forwardMessages(TELEGRAM_CHAT_ID, {
+                messages: [flacMessage.id],
+                fromPeer: targetBot,
+            });
+
+            const newMsgId = forwarded?.[0]?.id || flacMessage.id;
+            console.log(`[Telegram Userbot] Successfully forwarded to channel (New Msg ID: ${newMsgId})!`);
+
+            // Index into vault immediately
+            await syncTelegramChannelFiles();
+            return newMsgId;
+        } else {
+            console.log(`[Telegram Userbot] Bot did not respond with audio within 15s for "${queryKey}".`);
+        }
+    } catch (err) {
+        console.warn(`[Telegram Userbot] Error fetching FLAC:`, err.message);
+    } finally {
+        flacFetchingSet.delete(queryKey);
+    }
+    return null;
 }
 
 /**
@@ -669,6 +770,13 @@ app.get('/api/stream', async (req, res) => {
             archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
                 console.warn('[Auto Archive TG] Background error:', e.message);
             });
+
+            // If userbot is configured, automatically fetch genuine FLAC from music downloader bot
+            if (TELEGRAM_USER_SESSION) {
+                fetchFlacFromTelegramBot(trackObj).catch(e => {
+                    console.warn('[Userbot Fetch] Background error:', e.message);
+                });
+            }
         }
     } catch (err) {
         console.error('Stream resolution error:', err);

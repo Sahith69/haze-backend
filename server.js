@@ -42,6 +42,8 @@ if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY) {
 // Telegram Cloud Vault Setup (Automatic FLAC archiving)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_API_ID = process.env.TELEGRAM_API_ID || '19300364';
+const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH || '';
 const AUTO_ARCHIVE_TG = process.env.AUTO_ARCHIVE_TG !== 'false';
 
 if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
@@ -78,10 +80,20 @@ async function archiveTrackToTelegram(track, streamUrl) {
     const trackId = String(track.id || `${track.artist}_${track.title}`.replace(/[^a-zA-Z0-9]/g, '_'));
     if (archivingSet.has(trackId)) return null;
 
-    // Check if already in vault with Telegram message
+    // Strict check: if already in vault or Telegram channel, NEVER re-upload
     const currentVault = loadVault();
-    const existing = currentVault.find(t => String(t.id) === trackId && t.telegramMessageId);
+    const normTitle = (track.title || '').trim().toLowerCase();
+    const normArtist = (track.artist || '').trim().toLowerCase();
+    const existing = currentVault.find(t => {
+        if (!t.telegramMessageId) return false;
+        if (String(t.id) === trackId) return true;
+        const tTitle = (t.title || '').trim().toLowerCase();
+        const tArtist = (t.artist || '').trim().toLowerCase();
+        return tTitle === normTitle && tArtist === normArtist;
+    });
+
     if (existing) {
+        console.log(`[Telegram FLAC Vault] Track "${track.title}" by ${track.artist} is already in the channel (Msg ID: ${existing.telegramMessageId}) - skipping re-upload.`);
         return existing;
     }
 
@@ -308,12 +320,20 @@ app.get('/api/search', async (req, res) => {
     }
 });
 
+// In-memory cache for trending tracks
+let trendingCache = { data: null, timestamp: 0 };
+const TRENDING_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 /**
- * 2. Trending / Featured tracks for Home page
+ * 2. Trending / Featured tracks for Home page (Apple Music Top 50 + JioSaavn)
  */
 app.get('/api/trending', async (req, res) => {
+    if (trendingCache.data && (Date.now() - trendingCache.timestamp < TRENDING_CACHE_TTL)) {
+        return res.json({ tracks: trendingCache.data });
+    }
+
     try {
-        const url = 'https://itunes.apple.com/us/rss/topsongs/limit=30/json';
+        const url = 'https://itunes.apple.com/us/rss/topsongs/limit=50/json';
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Trending request failed: ${response.status}`);
@@ -334,12 +354,19 @@ app.get('/api/trending', async (req, res) => {
                 duration: 210, // Default duration placeholder
                 year: '2026',
                 genre: entry.category?.attributes?.label || 'Popular',
+                rank: index + 1,
             };
         });
 
+        if (tracks.length > 0) {
+            trendingCache = { data: tracks, timestamp: Date.now() };
+        }
         res.json({ tracks });
     } catch (err) {
         console.error('Trending error:', err);
+        if (trendingCache.data) {
+            return res.json({ tracks: trendingCache.data });
+        }
         res.status(500).json({ error: 'Failed to fetch trending tracks', details: err.message });
     }
 });
@@ -619,7 +646,7 @@ app.get('/api/lyrics', async (req, res) => {
         // Try exact match first
         const exactUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${duration || ''}`;
         const exactRes = await fetch(exactUrl, {
-            headers: { 'User-Agent': 'MonochromePlayer/1.0 (https://github.com/monochrome-music)' },
+            headers: { 'User-Agent': 'HazePlayer/1.0 (https://github.com/Sahith69/haze)' },
         });
 
         if (exactRes.ok) {
@@ -628,7 +655,7 @@ app.get('/api/lyrics', async (req, res) => {
             // Fallback to fuzzy search
             const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${artist} ${title}`)}`;
             const searchRes = await fetch(searchUrl, {
-                headers: { 'User-Agent': 'MonochromePlayer/1.0' },
+                headers: { 'User-Agent': 'HazePlayer/1.0' },
             });
             if (searchRes.ok) {
                 const searchResults = await searchRes.json();
@@ -790,5 +817,5 @@ if (fs.existsSync(distPath)) {
 }
 
 app.listen(PORT, () => {
-    console.log(`[Monochrome Player] Running on http://localhost:${PORT}`);
+    console.log(`[HAZE Player] Running on http://localhost:${PORT}`);
 });

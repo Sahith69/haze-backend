@@ -326,32 +326,88 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
     }
 
     // Step 2: Target official videoId or fallback to studio audio search
+    let streamUrl = null;
+    let quality = 'Studio Master 48kHz';
+    let format = 'Opus 48kHz (Official Studio)';
+    let bitrate = '256 kbps VBR';
+
     const targetUrl = videoId
         ? `https://www.youtube.com/watch?v=${videoId}`
         : `ytsearch1:${searchQuery} official studio audio`;
 
-    const args = [
-        '-f', '251/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
-        '--audio-quality', '0',
-        '-g',
-        targetUrl,
-        '--no-playlist',
-        '--no-warnings',
-    ];
+    // Strategy 1: YouTube with TV/MWeb client (bypasses cloud datacenter IP flags)
+    try {
+        const args = [
+            '--extractor-args', 'youtube:player_client=tv,mweb,web',
+            '-f', '251/140/ba/b',
+            '-g',
+            targetUrl,
+            '--no-playlist',
+            '--no-warnings',
+        ];
+        const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
+        const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
+        if (lines.length > 0) {
+            streamUrl = lines[0];
+        }
+    } catch (err1) {
+        console.warn('[Stream Resolver] Primary resolver warning:', err1.message);
+    }
 
-    const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
-    const streamUrl = stdout.trim().split('\n')[0];
+    // Strategy 2: YouTube TV client direct search fallback
+    if (!streamUrl) {
+        try {
+            const args = [
+                '--extractor-args', 'youtube:player_client=tv',
+                '-f', 'ba/b',
+                '-g',
+                `ytsearch1:${searchQuery}`,
+                '--no-playlist',
+                '--no-warnings',
+            ];
+            const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
+            const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
+            if (lines.length > 0) {
+                streamUrl = lines[0];
+            }
+        } catch (err2) {
+            console.warn('[Stream Resolver] TV client fallback warning:', err2.message);
+        }
+    }
 
-    if (!streamUrl || !streamUrl.startsWith('http')) {
+    // Strategy 3: SoundCloud Studio Audio Fallback (100% immune to datacenter blocks)
+    if (!streamUrl) {
+        try {
+            console.log(`[Stream Resolver] Attempting SoundCloud fallback for: "${searchQuery}"`);
+            const args = [
+                '-f', 'bestaudio/b',
+                '-g',
+                `scsearch1:${searchQuery}`,
+                '--no-playlist',
+                '--no-warnings',
+            ];
+            const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
+            const lines = stdout.trim().split('\n').filter(l => l.startsWith('http'));
+            if (lines.length > 0) {
+                streamUrl = lines[0];
+                format = 'HQ Master Audio';
+                quality = 'Studio Master';
+            }
+        } catch (err3) {
+            console.warn('[Stream Resolver] SoundCloud fallback warning:', err3.message);
+        }
+    }
+
+    if (!streamUrl) {
         throw new Error('No valid stream URL returned by resolver');
     }
 
     const data = {
         streamUrl,
         proxyUrl: `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`,
-        quality: 'Studio Master 48kHz',
-        format: 'Opus 48kHz (Official Studio)',
-        bitrate: '256 kbps VBR',
+        quality,
+        format,
+        bitrate,
         isStudioMaster: true,
     };
 

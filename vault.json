@@ -1,19 +1,504 @@
 [
   {
-    "id": "269573303",
+    "id": "Sabrina_Carpenter_Espresso",
+    "title": "Espresso",
+    "artist": "Sabrina Carpenter",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 51,
+    "telegramChatId": "",
+    "savedAt": "2026-10-31T22:06:28.699Z"
+  },
+  {
+    "id": "tg_50",
+    "title": "Espresso (Originally Performed by Sabrina Carpenter) [Instrumental]",
+    "artist": "Vox Freaks",
+    "album": "HAZE FLAC Vault",
+    "duration": 171,
+    "fileSize": 15810264,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 50,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/50",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T22:05:53.000Z"
+  },
+  {
+    "id": "tg_3",
+    "title": "Get Lucky",
+    "artist": "Daft Punk",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 3024466,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 3,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/3",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T17:47:34.000Z"
+  },
+  {
+    "id": "tg_4",
+    "title": "Low Tide",
+    "artist": "Sora Vale",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 34271137,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 4,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/4",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T18:32:15.000Z"
+  },
+  {
+    "id": "tg_10",
+    "title": "Shape of You",
+    "artist": "Ed Sheeran",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 16795510,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 10,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/10",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:09:38.000Z"
+  },
+  {
+    "id": "tg_13",
+    "title": "Raga of Madness",
+    "artist": "Anirudh Ravichander",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 22452471,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 13,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/13",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:10:58.000Z"
+  },
+  {
+    "id": "tg_19",
+    "title": "(Don't Fear) The Reaper",
+    "artist": "Blue Öyster Cult",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 26079642,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 19,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/19",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T20:37:12.000Z"
+  },
+  {
+    "id": "tg_24",
+    "title": "This Is Halloween",
+    "artist": "The Citizens of Halloween",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 14314591,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 24,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/24",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T20:38:10.000Z"
+  },
+  {
+    "id": "tg_9",
+    "title": "Blinding Lights",
+    "artist": "The Weeknd",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 16949146,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 9,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/9",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:09:27.000Z"
+  },
+  {
+    "id": "tg_12",
+    "title": "Raga of Revenge (From \"DC\")",
+    "artist": "Anirudh Ravichander",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 16061991,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 12,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/12",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:10:53.000Z"
+  },
+  {
+    "id": "tg_7",
+    "title": "Monster Mash",
+    "artist": "Bobby \"Boris\" Pickett & The Crypt-Kickers",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 2741326,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 7,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/7",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:03:39.000Z"
+  },
+  {
+    "id": "tg_36",
+    "title": "Taking our power back",
+    "artist": "Peacefuldan",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 17440179,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 36,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/36",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:31:37.000Z"
+  },
+  {
+    "id": "tg_14",
+    "title": "Starboy",
+    "artist": "The Weeknd",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 20838329,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 14,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/14",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:12:19.000Z"
+  },
+  {
+    "id": "tg_11",
+    "title": "Raga of Revenge",
+    "artist": "Anirudh Ravichander",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 16062002,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 11,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/11",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T19:10:40.000Z"
+  },
+  {
+    "id": "tg_41",
+    "title": "Alaakaa Loova (From \"OM Chapter 1: Udhiram  - The Blood Wood\") [Telugu]",
+    "artist": "Sai Abhyankkar, Chandra Bose, Ram Miriyala & Arun Kaundinya",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 28806961,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 41,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/41",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:36:44.000Z"
+  },
+  {
+    "id": "tg_42",
+    "title": "Alaakaa Loova (From \"OM Chapter 1: Udhiram  - The Blood Wood\") [Tamil]",
+    "artist": "Sai Abhyankkar & Rokesh",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 22287819,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 42,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/42",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:36:47.000Z"
+  },
+  {
+    "id": "tg_43",
+    "title": "Alaakaa Loova Unplugged (From \"OM Chapter 1: Udhiram  - The Blood…",
+    "artist": "Sai Abhyankkar & Rokesh",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 22287839,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 43,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/43",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:36:55.000Z"
+  },
+  {
+    "id": "tg_44",
+    "title": "Karuppa Kooda Va (From \"Karuppu\")",
+    "artist": "Pa. Vijay",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 30270230,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 44,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/44",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:39:25.000Z"
+  },
+  {
+    "id": "tg_45",
+    "title": "God Mode",
+    "artist": "Vishnu Edavan",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 29313861,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 45,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/45",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:39:45.000Z"
+  },
+  {
+    "id": "tg_46",
+    "title": "Vetta Karuppu Game Begins",
+    "artist": "Sai Abhyankkar",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 18424946,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 46,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/46",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:45:27.000Z"
+  },
+  {
+    "id": "tg_47",
+    "title": "God Mode Begins",
+    "artist": "Vishnu Edavan",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 6518583,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 47,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/47",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T21:48:14.000Z"
+  },
+  {
+    "id": "tg_23",
+    "title": "Choosin' Texas",
+    "artist": "Ella Langley",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 23148118,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 23,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/23",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T20:38:10.000Z"
+  },
+  {
+    "id": "tg_49",
+    "title": "Blinding Lights (Original by The Weeknd)",
+    "artist": "Piano Cover by Lily Morgan",
+    "album": "HAZE FLAC Vault",
+    "duration": 195,
+    "fileSize": 12479542,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 49,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/49",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T22:00:37.000Z"
+  },
+  {
+    "id": "tg_5",
     "title": "Thriller",
     "artist": "Michael Jackson",
-    "album": "Thriller",
+    "album": "HAZE FLAC Vault",
     "cover": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/32/4f/fd/324ffda2-9e51-8f6a-0c2d-c6fd2b41ac55/074643811224.jpg/600x600bb.jpg",
     "duration": 210,
     "isHiRes": true,
-    "qualityLabel": "48 kHz · Cloud Vault",
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "gradient": [
       "#7C5CFF",
       "#FF5C9E"
     ],
     "inVault": true,
     "cloudUrl": null,
-    "savedAt": "2026-10-31T14:50:45.527Z"
+    "savedAt": "2026-10-31T18:32:42.000Z",
+    "fileSize": 2547601,
+    "isFlac": true,
+    "telegramMessageId": 5,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/5"
   }
 ]

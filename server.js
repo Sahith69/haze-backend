@@ -10,8 +10,9 @@ import fs from 'fs';
 import CryptoJS from 'crypto-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
-import { TelegramClient } from 'telegram';
+import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions/index.js';
+import bigInt from 'big-integer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -128,7 +129,7 @@ async function getTelegramUserClient() {
 }
 
 /**
- * Automatically request FLAC from Telegram music bots and forward to private channel
+ * Automatically request bit-perfect FLAC from @deezload2bot and post directly to private channel
  */
 const flacFetchingSet = new Set();
 async function fetchFlacFromTelegramBot(track) {
@@ -136,50 +137,55 @@ async function fetchFlacFromTelegramBot(track) {
     const userClient = await getTelegramUserClient();
     if (!userClient) return null;
 
-    const queryKey = `${track.artist} - ${track.title}`.trim();
+    const queryKey = `${track.title} ${track.artist}`.trim();
     if (flacFetchingSet.has(queryKey)) return null;
     flacFetchingSet.add(queryKey);
 
-    console.log(`[Telegram Userbot] Requesting FLAC for "${queryKey}" from music downloader bot...`);
+    console.log(`[Telegram Userbot] Requesting bit-perfect FLAC for "${queryKey}" from @deezload2bot...`);
 
     try {
         const targetBot = '@deezload2bot';
-        await userClient.sendMessage(targetBot, { message: queryKey });
+        const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
 
-        const startTime = Date.now();
-        let flacMessage = null;
+        const query = `${track.artist} ${track.title}`.trim();
+        const results = await userClient.invoke(new Api.messages.GetInlineBotResults({
+            bot: targetBot,
+            peer: channelPeer,
+            query: query,
+            offset: '',
+        }));
 
-        while (Date.now() - startTime < 15000) {
-            await new Promise(r => setTimeout(r, 2000));
-            const recent = await userClient.getMessages(targetBot, { limit: 5 });
-            for (const m of recent) {
-                if (m.date * 1000 >= startTime - 1000 && m.media && m.media.document) {
-                    const doc = m.media.document;
-                    const isAudio = doc.mimeType?.startsWith('audio/') || doc.attributes?.some(a => a.className === 'DocumentAttributeAudio');
-                    if (isAudio) {
-                        flacMessage = m;
-                        break;
-                    }
-                }
-            }
-            if (flacMessage) break;
-        }
+        if (results.results && results.results.length > 0) {
+            const normTitle = (track.title || '').toLowerCase().trim();
+            const normArtist = (track.artist || '').toLowerCase().trim();
 
-        if (flacMessage) {
-            console.log(`[Telegram Userbot] Received audio file from ${targetBot}! Forwarding to private channel ${TELEGRAM_CHAT_ID}...`);
-            const forwarded = await userClient.forwardMessages(TELEGRAM_CHAT_ID, {
-                messages: [flacMessage.id],
-                fromPeer: targetBot,
-            });
+            // Prioritize exact match where description contains artist and title contains track title
+            const matched = results.results.find(r => {
+                const desc = (r.description || '').toLowerCase();
+                const title = (r.title || '').toLowerCase();
+                return desc.includes(normArtist) && (title.includes(normTitle) || normTitle.includes(title));
+            }) || results.results.find(r => {
+                const title = (r.title || '').toLowerCase();
+                return title.includes(normTitle) || normTitle.includes(title);
+            }) || results.results[0];
 
-            const newMsgId = forwarded?.[0]?.id || flacMessage.id;
-            console.log(`[Telegram Userbot] Successfully forwarded to channel (New Msg ID: ${newMsgId})!`);
+            console.log(`[Telegram Userbot] Found best FLAC match: "${matched.title}" (${matched.description?.replace(/\n/g, ' ') || ''}) [ID: ${matched.id}]. Posting to channel...`);
 
-            // Index into vault immediately
-            await syncTelegramChannelFiles();
-            return newMsgId;
+            await userClient.invoke(new Api.messages.SendInlineBotResult({
+                peer: channelPeer,
+                queryId: results.queryId,
+                id: matched.id,
+            }));
+
+            console.log(`[Telegram Userbot] Successfully posted bit-perfect FLAC to channel ${TELEGRAM_CHAT_ID}!`);
+
+            setTimeout(() => {
+                syncTelegramChannelFiles().catch(() => {});
+            }, 3500);
+
+            return matched.id;
         } else {
-            console.log(`[Telegram Userbot] Bot did not respond with audio within 15s for "${queryKey}".`);
+            console.log(`[Telegram Userbot] No inline results returned for "${queryKey}".`);
         }
     } catch (err) {
         console.warn(`[Telegram Userbot] Error fetching FLAC:`, err.message);
@@ -194,12 +200,13 @@ async function fetchFlacFromTelegramBot(track) {
  */
 async function syncTelegramChannelFiles() {
     if (!TELEGRAM_CHAT_ID) return loadVault();
-    const client = await getTelegramClient();
+    const client = (await getTelegramUserClient()) || (await getTelegramClient());
     if (!client) return loadVault();
 
     try {
-        console.log(`[GramJS MTProto] Indexing audio files from channel ${TELEGRAM_CHAT_ID}...`);
-        const messages = await client.getMessages(TELEGRAM_CHAT_ID, { limit: 100 });
+        const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
+        console.log(`[GramJS MTProto] Indexing audio files from channel ${channelPeer}...`);
+        const messages = await client.getMessages(channelPeer, { limit: 100 });
         const vault = loadVault();
         let addedCount = 0;
 
@@ -215,7 +222,7 @@ async function syncTelegramChannelFiles() {
                 const title = audioAttr?.title || (msg.message ? msg.message.split('\n')[1]?.replace('🎵', '').trim() : '') || `Track #${msg.id}`;
                 const artist = audioAttr?.performer || 'Unknown Artist';
                 const duration = audioAttr?.duration || 210;
-                const isFlac = doc.mimeType?.includes('flac') || doc.attributes?.some(a => a.fileName?.endsWith('.flac'));
+                const isFlac = doc.mimeType?.includes('flac') || doc.mimeType?.includes('x-flac') || doc.attributes?.some(a => a.fileName?.toLowerCase().endsWith('.flac'));
 
                 const trackId = `tg_${msg.id}`;
                 const existingIdx = vault.findIndex(t => t.telegramMessageId === msg.id || (t.title?.toLowerCase() === title.toLowerCase() && t.artist?.toLowerCase() === artist.toLowerCase()));
@@ -233,7 +240,7 @@ async function syncTelegramChannelFiles() {
                     telegramMessageId: msg.id,
                     telegramChatId: TELEGRAM_CHAT_ID,
                     streamUrl: `/api/tg-stream/${msg.id}`,
-                    cover: 'https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg',
+                    cover: (existingIdx >= 0 && vault[existingIdx].cover) ? vault[existingIdx].cover : 'https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg',
                     gradient: ['#7C5CFF', '#FF5C9E'],
                     inVault: true,
                     savedAt: new Date(msg.date * 1000).toISOString(),
@@ -641,12 +648,19 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
     // Strategy 0: Direct Telegram MTProto Lossless FLAC Master (Pure bit-perfect FLAC from channel)
     try {
         const vault = loadVault();
-        const vaultMatch = vault.find(t => 
-            t.telegramMessageId && (
-                (cleanTitle && t.title?.toLowerCase().includes(cleanTitle.toLowerCase())) ||
-                (cleanArtist && t.artist?.toLowerCase().includes(cleanArtist.toLowerCase()))
-            )
-        );
+        const vaultMatch = vault.find(t => {
+            if (!t.telegramMessageId) return false;
+            const tTitle = (t.title || '').toLowerCase();
+            const tArtist = (t.artist || '').toLowerCase();
+            const cTitle = cleanTitle ? cleanTitle.toLowerCase() : '';
+            const cArtist = cleanArtist ? cleanArtist.toLowerCase() : '';
+
+            if (cTitle && tTitle.includes(cTitle)) {
+                if (!cArtist) return true;
+                return tArtist.includes(cArtist) || cArtist.includes(tArtist);
+            }
+            return false;
+        });
         if (vaultMatch && vaultMatch.telegramMessageId) {
             console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
             const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
@@ -793,13 +807,14 @@ app.get('/api/tg-stream/:messageId', async (req, res) => {
         return res.status(400).send('Invalid message ID or missing Telegram channel');
     }
 
-    const client = await getTelegramClient();
+    const client = (await getTelegramUserClient()) || (await getTelegramClient());
     if (!client) {
         return res.status(503).send('Telegram MTProto service not connected');
     }
 
     try {
-        const [msg] = await client.getMessages(TELEGRAM_CHAT_ID, { ids: [messageId] });
+        const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
+        const [msg] = await client.getMessages(channelPeer, { ids: [messageId] });
         if (!msg || !msg.media || !msg.media.document) {
             return res.status(404).send('Audio media not found in Telegram message');
         }
@@ -830,13 +845,17 @@ app.get('/api/tg-stream/:messageId', async (req, res) => {
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Access-Control-Allow-Origin', '*');
 
+        let bytesSent = 0;
         for await (const chunk of client.iterDownload({
             file: msg.media,
-            offset: start,
-            limit: chunkSize,
-            chunkSize: 128 * 1024,
+            offset: bigInt(start),
+            requestSize: 128 * 1024,
         })) {
             res.write(chunk);
+            bytesSent += chunk.length;
+            if (bytesSent >= chunkSize) {
+                break;
+            }
         }
 
         res.end();
@@ -851,7 +870,7 @@ app.get('/api/tg-stream/:messageId', async (req, res) => {
 /**
  * Sync Telegram channel audio files into HAZE Vault
  */
-app.get('/api/vault/sync', async (req, res) => {
+app.all('/api/vault/sync', async (req, res) => {
     try {
         const updatedVault = await syncTelegramChannelFiles();
         res.json({ success: true, count: updatedVault.length, tracks: updatedVault });

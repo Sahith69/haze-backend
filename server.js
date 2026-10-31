@@ -180,6 +180,7 @@ async function fetchFlacFromTelegramBot(track) {
             console.log(`[Telegram Userbot] Successfully posted bit-perfect FLAC to channel ${TELEGRAM_CHAT_ID}!`);
 
             setTimeout(() => {
+                streamCache.clear();
                 syncTelegramChannelFiles().catch(() => {});
             }, 3500);
 
@@ -640,10 +641,6 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
     }
 
     const cacheKey = searchQuery.toLowerCase();
-    const cached = streamCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < STREAM_CACHE_TTL) {
-        return cached.data;
-    }
 
     // Strategy 0: Direct Telegram MTProto Lossless FLAC Master (Pure bit-perfect FLAC from channel)
     try {
@@ -655,7 +652,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
             const cTitle = cleanTitle ? cleanTitle.toLowerCase() : '';
             const cArtist = cleanArtist ? cleanArtist.toLowerCase() : '';
 
-            if (cTitle && tTitle.includes(cTitle)) {
+            if (cTitle && (tTitle.includes(cTitle) || cTitle.includes(tTitle))) {
                 if (!cArtist) return true;
                 return tArtist.includes(cArtist) || cArtist.includes(tArtist);
             }
@@ -678,6 +675,11 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
         }
     } catch (errTg) {
         console.warn('[Stream Resolver] Telegram Vault check warning:', errTg.message);
+    }
+
+    const cached = streamCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < STREAM_CACHE_TTL) {
+        return cached.data;
     }
 
     // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)

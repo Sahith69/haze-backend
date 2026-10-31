@@ -10,6 +10,8 @@ import fs from 'fs';
 import CryptoJS from 'crypto-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +52,108 @@ if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
     console.log('[Telegram FLAC Vault] Connected to Telegram channel:', TELEGRAM_CHAT_ID);
 } else {
     console.log('[Telegram FLAC Vault] Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Render to auto-archive FLACs.');
+}
+
+// GramJS MTProto Client for Telegram streaming with zero 20 MB cap
+let tgClient = null;
+let tgClientConnecting = false;
+
+async function getTelegramClient() {
+    if (tgClient) return tgClient;
+    if (tgClientConnecting) {
+        for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            if (tgClient) return tgClient;
+        }
+    }
+    if (!TELEGRAM_BOT_TOKEN) return null;
+
+    tgClientConnecting = true;
+    try {
+        const apiIdNum = parseInt(TELEGRAM_API_ID, 10) || 19300364;
+        const client = new TelegramClient(new StringSession(''), apiIdNum, TELEGRAM_API_HASH, {
+            connectionRetries: 5,
+        });
+        await client.start({
+            botAuthToken: TELEGRAM_BOT_TOKEN,
+        });
+        tgClient = client;
+        console.log('[GramJS MTProto] Connected successfully as Bot to MTProto client!');
+        return tgClient;
+    } catch (e) {
+        console.warn('[GramJS MTProto] Bot MTProto connection warning:', e.message);
+        return null;
+    } finally {
+        tgClientConnecting = false;
+    }
+}
+
+/**
+ * Scan & Index all genuine FLAC / audio files from Telegram channel
+ */
+async function syncTelegramChannelFiles() {
+    if (!TELEGRAM_CHAT_ID) return loadVault();
+    const client = await getTelegramClient();
+    if (!client) return loadVault();
+
+    try {
+        console.log(`[GramJS MTProto] Indexing audio files from channel ${TELEGRAM_CHAT_ID}...`);
+        const messages = await client.getMessages(TELEGRAM_CHAT_ID, { limit: 100 });
+        const vault = loadVault();
+        let addedCount = 0;
+
+        for (const msg of messages) {
+            if (!msg.media) continue;
+            const doc = msg.media.document;
+            if (!doc) continue;
+
+            const isAudio = doc.mimeType?.startsWith('audio/') || doc.attributes?.some(a => a.className === 'DocumentAttributeAudio');
+            const audioAttr = doc.attributes?.find(a => a.className === 'DocumentAttributeAudio');
+
+            if (isAudio) {
+                const title = audioAttr?.title || (msg.message ? msg.message.split('\n')[1]?.replace('🎵', '').trim() : '') || `Track #${msg.id}`;
+                const artist = audioAttr?.performer || 'Unknown Artist';
+                const duration = audioAttr?.duration || 210;
+                const isFlac = doc.mimeType?.includes('flac') || doc.attributes?.some(a => a.fileName?.endsWith('.flac'));
+
+                const trackId = `tg_${msg.id}`;
+                const existingIdx = vault.findIndex(t => t.telegramMessageId === msg.id || (t.title?.toLowerCase() === title.toLowerCase() && t.artist?.toLowerCase() === artist.toLowerCase()));
+
+                const trackObj = {
+                    id: trackId,
+                    title,
+                    artist,
+                    album: 'HAZE FLAC Vault',
+                    duration,
+                    fileSize: Number(doc.size) || 0,
+                    isHiRes: true,
+                    isFlac: !!isFlac,
+                    qualityLabel: isFlac ? '1,411 kbps · Pure Lossless FLAC Master' : '320 kbps · Studio Audio',
+                    telegramMessageId: msg.id,
+                    telegramChatId: TELEGRAM_CHAT_ID,
+                    streamUrl: `/api/tg-stream/${msg.id}`,
+                    cover: 'https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg',
+                    gradient: ['#7C5CFF', '#FF5C9E'],
+                    inVault: true,
+                    savedAt: new Date(msg.date * 1000).toISOString(),
+                };
+
+                if (existingIdx >= 0) {
+                    vault[existingIdx] = { ...vault[existingIdx], ...trackObj };
+                } else {
+                    vault.unshift(trackObj);
+                    addedCount++;
+                }
+            }
+        }
+
+        saveVault(vault);
+        console.log(`[GramJS MTProto] Channel sync completed. Total tracks in vault: ${vault.length} (indexed ${addedCount} new)`);
+        return vault;
+    } catch (err) {
+        console.error('[GramJS MTProto] Error indexing channel files:', err.message);
+        return loadVault();
+    }
 }
 
 // Local Vault database path
@@ -433,6 +537,34 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
         return cached.data;
     }
 
+    // Strategy 0: Direct Telegram MTProto Lossless FLAC Master (Pure bit-perfect FLAC from channel)
+    try {
+        const vault = loadVault();
+        const vaultMatch = vault.find(t => 
+            t.telegramMessageId && (
+                (cleanTitle && t.title?.toLowerCase().includes(cleanTitle.toLowerCase())) ||
+                (cleanArtist && t.artist?.toLowerCase().includes(cleanArtist.toLowerCase()))
+            )
+        );
+        if (vaultMatch && vaultMatch.telegramMessageId) {
+            console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
+            const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
+            const data = {
+                streamUrl: streamPath,
+                proxyUrl: streamPath,
+                quality: vaultMatch.qualityLabel || '1,411 kbps · Pure Lossless FLAC Master',
+                format: '16-bit / 44.1 kHz FLAC Master',
+                bitrate: '1,411 kbps',
+                isFlac: true,
+                isStudioMaster: true,
+            };
+            streamCache.set(cacheKey, { timestamp: Date.now(), data });
+            return data;
+        }
+    } catch (errTg) {
+        console.warn('[Stream Resolver] Telegram Vault check warning:', errTg.message);
+    }
+
     // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)
     try {
         const saavnStream = await resolveJioSaavn(searchQuery);
@@ -541,6 +673,82 @@ app.get('/api/stream', async (req, res) => {
     } catch (err) {
         console.error('Stream resolution error:', err);
         res.status(500).json({ error: 'Failed to resolve audio stream', details: err.message });
+    }
+});
+
+/**
+ * 3.5. Direct MTProto Range Stream for Telegram Channel Lossless Audio (Zero 20MB limit!)
+ */
+app.get('/api/tg-stream/:messageId', async (req, res) => {
+    const messageId = parseInt(req.params.messageId, 10);
+    if (!messageId || !TELEGRAM_CHAT_ID) {
+        return res.status(400).send('Invalid message ID or missing Telegram channel');
+    }
+
+    const client = await getTelegramClient();
+    if (!client) {
+        return res.status(503).send('Telegram MTProto service not connected');
+    }
+
+    try {
+        const [msg] = await client.getMessages(TELEGRAM_CHAT_ID, { ids: [messageId] });
+        if (!msg || !msg.media || !msg.media.document) {
+            return res.status(404).send('Audio media not found in Telegram message');
+        }
+
+        const doc = msg.media.document;
+        const totalSize = Number(doc.size);
+        const mimeType = doc.mimeType || 'audio/flac';
+
+        let start = 0;
+        let end = totalSize - 1;
+        const range = req.headers.range;
+
+        if (range) {
+            const parts = range.replace(/bytes=/, '').split('-');
+            start = parseInt(parts[0], 10);
+            if (parts[1]) {
+                end = parseInt(parts[1], 10);
+            }
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+        } else {
+            res.status(200);
+        }
+
+        const chunkSize = end - start + 1;
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Length', chunkSize);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        for await (const chunk of client.iterDownload({
+            file: msg.media,
+            offset: start,
+            limit: chunkSize,
+            chunkSize: 128 * 1024,
+        })) {
+            res.write(chunk);
+        }
+
+        res.end();
+    } catch (err) {
+        console.error(`[GramJS Stream] Error streaming message ${messageId}:`, err);
+        if (!res.headersSent) {
+            res.status(500).send('Error streaming from Telegram');
+        }
+    }
+});
+
+/**
+ * Sync Telegram channel audio files into HAZE Vault
+ */
+app.get('/api/vault/sync', async (req, res) => {
+    try {
+        const updatedVault = await syncTelegramChannelFiles();
+        res.json({ success: true, count: updatedVault.length, tracks: updatedVault });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 

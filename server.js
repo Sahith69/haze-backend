@@ -637,7 +637,7 @@ async function resolveJioSaavn(searchQuery) {
 /**
  * 3. Resolve direct audio stream using multi-strategy fallbacks
  */
-async function resolveTrackAudio(artist = '', title = '', query = '') {
+async function resolveTrackAudio(artist = '', title = '', query = '', requestedQuality = '') {
     const cleanArtist = cleanQuery(artist);
     const cleanTitle = cleanQuery(title);
     const searchQuery = cleanQuery(query || `${cleanArtist} ${cleanTitle}`);
@@ -646,46 +646,60 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
         throw new Error('Missing search query or artist/title');
     }
 
-    const cacheKey = searchQuery.toLowerCase();
-
-    // Strategy 0: Direct Telegram MTProto Lossless FLAC Master (Pure bit-perfect FLAC from channel)
-    try {
-        const vault = loadVault();
-        const vaultMatch = vault.find(t => {
-            if (!t.telegramMessageId) return false;
-            const tTitle = (t.title || '').toLowerCase();
-            const tArtist = (t.artist || '').toLowerCase();
-            const cTitle = cleanTitle ? cleanTitle.toLowerCase() : '';
-            const cArtist = cleanArtist ? cleanArtist.toLowerCase() : '';
-
-            if (cTitle && (tTitle.includes(cTitle) || cTitle.includes(tTitle))) {
-                if (!cArtist) return true;
-                return tArtist.includes(cArtist) || cArtist.includes(tArtist);
-            }
-            return false;
-        });
-        if (vaultMatch && vaultMatch.telegramMessageId) {
-            console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
-            const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
-            const data = {
-                streamUrl: streamPath,
-                proxyUrl: streamPath,
-                quality: vaultMatch.qualityLabel || '1,411 kbps · Pure Lossless FLAC Master',
-                format: '16-bit / 44.1 kHz FLAC Master',
-                bitrate: '1,411 kbps',
-                isFlac: true,
-                isStudioMaster: true,
-            };
-            streamCache.set(cacheKey, { timestamp: Date.now(), data });
-            return data;
-        }
-    } catch (errTg) {
-        console.warn('[Stream Resolver] Telegram Vault check warning:', errTg.message);
-    }
+    const isFlacRequested = requestedQuality === 'flac' || requestedQuality === '1411k';
+    const cacheKey = `${searchQuery.toLowerCase()}_${isFlacRequested ? 'flac' : 'studio'}`;
 
     const cached = streamCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < STREAM_CACHE_TTL) {
         return cached.data;
+    }
+
+    // Strategy 0: Direct Telegram MTProto Lossless FLAC Master (Only when FLAC requested or default)
+    if (isFlacRequested) {
+        try {
+            const vault = loadVault();
+            const vaultMatch = vault.find(t => {
+                if (!t.telegramMessageId) return false;
+                const tTitle = (t.title || '').toLowerCase();
+                const tArtist = (t.artist || '').toLowerCase();
+                const cTitle = cleanTitle ? cleanTitle.toLowerCase() : '';
+                const cArtist = cleanArtist ? cleanArtist.toLowerCase() : '';
+
+                if (cTitle && (tTitle.includes(cTitle) || cTitle.includes(tTitle))) {
+                    if (!cArtist) return true;
+                    return tArtist.includes(cArtist) || cArtist.includes(tArtist);
+                }
+                return false;
+            });
+            if (vaultMatch && vaultMatch.telegramMessageId) {
+                console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
+                const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
+
+                // Resolve Saavn 320k stream concurrently as instant fallback
+                let fallbackStreamUrl = null;
+                try {
+                    const saavnFallback = await resolveJioSaavn(searchQuery);
+                    if (saavnFallback && saavnFallback.streamUrl) {
+                        fallbackStreamUrl = saavnFallback.streamUrl;
+                    }
+                } catch (e) {}
+
+                const data = {
+                    streamUrl: streamPath,
+                    proxyUrl: streamPath,
+                    fallbackUrl: fallbackStreamUrl,
+                    quality: vaultMatch.qualityLabel || '1,411 kbps · Pure Lossless FLAC Master',
+                    format: '16-bit / 44.1 kHz FLAC Master',
+                    bitrate: '1,411 kbps',
+                    isFlac: true,
+                    isStudioMaster: true,
+                };
+                streamCache.set(cacheKey, { timestamp: Date.now(), data });
+                return data;
+            }
+        } catch (errTg) {
+            console.warn('[Stream Resolver] Telegram Vault check warning:', errTg.message);
+        }
     }
 
     // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)
@@ -696,6 +710,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
             const data = {
                 streamUrl: saavnStream.streamUrl,
                 proxyUrl: `/api/proxy-stream?url=${encodeURIComponent(saavnStream.streamUrl)}`,
+                fallbackUrl: `/api/proxy-stream?url=${encodeURIComponent(saavnStream.streamUrl)}`,
                 quality: saavnStream.quality,
                 format: saavnStream.format,
                 bitrate: saavnStream.bitrate,
@@ -774,9 +789,9 @@ async function resolveTrackAudio(artist = '', title = '', query = '') {
 }
 
 app.get('/api/stream', async (req, res) => {
-    const { artist = '', title = '', query = '', id = '', duration = '', cover = '', album = '' } = req.query;
+    const { artist = '', title = '', query = '', id = '', duration = '', cover = '', album = '', quality = '' } = req.query;
     try {
-        const data = await resolveTrackAudio(artist, title, query);
+        const data = await resolveTrackAudio(artist, title, query, quality);
         res.json(data);
 
         // Auto-archive in background to Telegram FLAC Vault if configured

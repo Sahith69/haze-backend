@@ -951,35 +951,28 @@ app.get('/api/radio', async (req, res) => {
             seenTitles.add(cleanRadioTitle(exclude));
         }
 
-        const radioTracks = [];
-        for (const art of combinedArtists) {
-            if (radioTracks.length >= Number(limit)) break;
+        // Parallel fetch across all combined artists for lightning-fast (<1s) radio generation
+        const artistResults = await Promise.all(combinedArtists.map(async (art) => {
             try {
                 const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(art)}&entity=song&limit=6`;
                 const itunesRes = await fetch(itunesUrl).then(r => r.ok ? r.json() : null);
-                let tracksFromArtist = 0;
+                const items = [];
+                const penalty = ['karaoke', 'instrumental', 'tribute', 'ringtone', 'originally performed', 'piano version', 'angry live version'];
 
                 for (const item of (itunesRes?.results || [])) {
-                    if (tracksFromArtist >= 3) break;
-                    if (radioTracks.length >= Number(limit)) break;
-
+                    if (items.length >= 3) break;
                     const title = item.trackName || '';
                     if (!title) continue;
                     if (exclude && radioTitlesMatch(title, exclude)) continue;
 
-                    const cT = cleanRadioTitle(title);
-                    if (seenTitles.has(cT)) continue;
-                    seenTitles.add(cT);
-
                     const lowerTitle = title.toLowerCase();
-                    const penalty = ['karaoke', 'instrumental', 'tribute', 'ringtone', 'originally performed', 'piano version'];
                     if (penalty.some(p => lowerTitle.includes(p))) continue;
 
                     const rawCover = item.artworkUrl100 || '';
                     const cover = rawCover.replace('100x100bb.jpg', '600x600bb.jpg');
                     const coverLarge = rawCover.replace('100x100bb.jpg', '1000x1000bb.jpg');
 
-                    radioTracks.push({
+                    items.push({
                         id: `radio-${item.trackId}`,
                         title,
                         artist: item.artistName || art,
@@ -993,9 +986,27 @@ app.get('/api/radio', async (req, res) => {
                         qualityLabel: '320 kbps · Studio Master',
                         source: 'radio'
                     });
-                    tracksFromArtist++;
                 }
-            } catch (e) {}
+                return items;
+            } catch (e) {
+                return [];
+            }
+        }));
+
+        const radioTracks = [];
+        // Interleave tracks from different artists for optimal variety and vibe flow
+        const maxPerList = Math.max(...artistResults.map(r => r.length), 0);
+        for (let i = 0; i < maxPerList; i++) {
+            for (const list of artistResults) {
+                if (radioTracks.length >= Number(limit)) break;
+                const track = list[i];
+                if (!track) continue;
+                const cT = cleanRadioTitle(track.title);
+                if (seenTitles.has(cT)) continue;
+                seenTitles.add(cT);
+                radioTracks.push(track);
+            }
+            if (radioTracks.length >= Number(limit)) break;
         }
 
         if (radioTracks.length > 0) {
@@ -1009,11 +1020,38 @@ app.get('/api/radio', async (req, res) => {
 });
 
 /**
- * Direct JioSaavn 320kbps Studio Master resolver
+ * Score how well a JioSaavn search result matches the wanted title + artist.
+ * Penalises covers, remixes, karaoke, etc. so we always get the original version.
  */
-async function resolveJioSaavn(searchQuery) {
+function scoreJioSaavnResult(result, wantedTitle = '', wantedArtist = '') {
+    const PENALTY_TERMS = ['cover', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'remix', 'ringtone', 'piano', 'slowed', 'sped up', 'nightcore', 'acoustic', 'live'];
+    const rTitle = (result.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const rArtist = ((result.subtitle || '') + ' ' + (result.more_info?.primary_artists || '')).toLowerCase();
+    const wTitle = wantedTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const wArtist = wantedArtist.toLowerCase();
+
+    let score = 0;
+    if (rTitle === wTitle) score += 60;
+    else if (rTitle.includes(wTitle) || wTitle.includes(rTitle)) score += 30;
+
+    const wTokens = wArtist.split(/[\s,&]+/).filter(t => t.length > 2);
+    if (wTokens.some(tok => rArtist.includes(tok))) score += 40;
+
+    const wantedPenalty = PENALTY_TERMS.some(pt => wTitle.includes(pt) || wArtist.includes(pt));
+    const hasPenalty = PENALTY_TERMS.some(pt => (result.title || '').toLowerCase().includes(pt));
+    if (hasPenalty && !wantedPenalty) score -= 80;
+
+    return score;
+}
+
+/**
+ * Direct JioSaavn 320kbps Studio Master resolver
+ * Uses smart title+artist scoring instead of blindly taking results[0].
+ */
+async function resolveJioSaavn(searchQuery, hintTitle = '', hintArtist = '') {
     try {
-        const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=5&p=1&q=${encodeURIComponent(searchQuery)}`;
+        // Fetch top 8 results so the scorer has more candidates
+        const searchUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=8&p=1&q=${encodeURIComponent(searchQuery)}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 4000);
         const res = await fetch(searchUrl, {
@@ -1023,10 +1061,15 @@ async function resolveJioSaavn(searchQuery) {
         clearTimeout(timeout);
         if (!res.ok) return null;
         const data = await res.json();
-        const results = data.results || [];
+        const results = (data.results || []).filter(r => r?.more_info?.encrypted_media_url);
         if (results.length === 0) return null;
 
-        const match = results[0];
+        // Pick best-scoring result
+        const wTitle = hintTitle || searchQuery;
+        const wArtist = hintArtist || '';
+        const scored = results.map(r => ({ r, s: scoreJioSaavnResult(r, wTitle, wArtist) }));
+        scored.sort((a, b) => b.s - a.s);
+        const match = scored[0].r;
         const enc = match.more_info?.encrypted_media_url;
         if (!enc) return null;
 
@@ -1120,7 +1163,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 // Resolve Saavn 320k stream concurrently as instant fallback
                 let fallbackStreamUrl = null;
                 try {
-                    const saavnFallback = await resolveJioSaavn(searchQuery);
+                    const saavnFallback = await resolveJioSaavn(searchQuery, cleanTitle, cleanArtist);
                     if (saavnFallback && saavnFallback.streamUrl) {
                         fallbackStreamUrl = saavnFallback.streamUrl;
                     }
@@ -1146,7 +1189,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
 
     // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)
     try {
-        const saavnStream = await resolveJioSaavn(searchQuery);
+        const saavnStream = await resolveJioSaavn(searchQuery, cleanTitle, cleanArtist);
         if (saavnStream && saavnStream.streamUrl) {
             console.log(`[Stream Resolver] Matched direct 320kbps Studio Master for: "${searchQuery}"`);
             const data = {

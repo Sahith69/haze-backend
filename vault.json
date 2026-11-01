@@ -1,13 +1,55 @@
 [
   {
-    "id": "Sabrina_Carpenter_Espresso",
+    "id": "tg_53",
+    "title": "BIRDS OF A FEATHER",
+    "artist": "Billie Eilish",
+    "album": "HAZE FLAC Vault",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "duration": 210,
+    "isHiRes": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 53,
+    "telegramChatId": "",
+    "savedAt": "2026-10-31T22:13:23.000Z",
+    "fileSize": 24221164,
+    "isFlac": true,
+    "streamUrl": "/api/tg-stream/53"
+  },
+  {
+    "id": "tg_53",
+    "title": "BIRDS OF A FEATHER",
+    "artist": "Billie Eilish",
+    "album": "HAZE FLAC Vault",
+    "duration": 210,
+    "fileSize": 24221164,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "telegramMessageId": 53,
+    "telegramChatId": "",
+    "streamUrl": "/api/tg-stream/53",
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "savedAt": "2026-10-31T22:13:23.000Z"
+  },
+  {
+    "id": "tg_51",
     "title": "Espresso",
     "artist": "Sabrina Carpenter",
     "album": "HAZE FLAC Vault",
-    "cover": "",
-    "duration": 216,
+    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "duration": 210,
     "isHiRes": true,
-    "qualityLabel": "1,411 kbps · FLAC Master",
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "gradient": [
       "#7C5CFF",
       "#FF5C9E"
@@ -15,7 +57,10 @@
     "inVault": true,
     "telegramMessageId": 51,
     "telegramChatId": "",
-    "savedAt": "2026-10-31T22:06:28.699Z"
+    "savedAt": "2026-10-31T22:06:28.000Z",
+    "fileSize": 22402353,
+    "isFlac": true,
+    "streamUrl": "/api/tg-stream/51"
   },
   {
     "id": "tg_50",

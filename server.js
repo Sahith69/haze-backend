@@ -81,6 +81,7 @@ async function getTelegramClient() {
         const apiIdNum = parseInt(TELEGRAM_API_ID, 10) || 19300364;
         const client = new TelegramClient(new StringSession(''), apiIdNum, TELEGRAM_API_HASH, {
             connectionRetries: 5,
+            timeout: 30,
         });
         await client.start({
             botAuthToken: TELEGRAM_BOT_TOKEN,
@@ -189,6 +190,9 @@ async function fetchFlacFromTelegramBot(track) {
             console.log(`[Telegram Userbot] No inline results returned for "${queryKey}".`);
         }
     } catch (err) {
+        if (err.message && err.message.includes('AUTH_KEY_DUPLICATED')) {
+            tgUserClient = null;
+        }
         console.warn(`[Telegram Userbot] Error fetching FLAC:`, err.message);
     } finally {
         flacFetchingSet.delete(queryKey);
@@ -201,13 +205,15 @@ async function fetchFlacFromTelegramBot(track) {
  */
 async function syncTelegramChannelFiles() {
     if (!TELEGRAM_CHAT_ID) return loadVault();
-    const client = (await getTelegramUserClient()) || (await getTelegramClient());
-    if (!client) return loadVault();
+    const userClient = await getTelegramUserClient();
+    if (!userClient) {
+        return loadVault();
+    }
 
     try {
         const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
         console.log(`[GramJS MTProto] Indexing audio files from channel ${channelPeer}...`);
-        const messages = await client.getMessages(channelPeer, { limit: 100 });
+        const messages = await userClient.getMessages(channelPeer, { limit: 100 });
         const vault = loadVault();
         let addedCount = 0;
 
@@ -809,14 +815,35 @@ app.get('/api/tg-stream/:messageId', async (req, res) => {
         return res.status(400).send('Invalid message ID or missing Telegram channel');
     }
 
-    const client = (await getTelegramUserClient()) || (await getTelegramClient());
+    // Prefer Bot client for streaming: 100% stable, no duplicate session / auth key issues!
+    let client = await getTelegramClient();
+    if (!client) {
+        client = await getTelegramUserClient();
+    }
     if (!client) {
         return res.status(503).send('Telegram MTProto service not connected');
     }
 
     try {
         const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
-        const [msg] = await client.getMessages(channelPeer, { ids: [messageId] });
+        let msg = null;
+        try {
+            const msgs = await client.getMessages(channelPeer, { ids: [messageId] });
+            msg = msgs ? msgs[0] : null;
+        } catch (clientErr) {
+            console.warn(`[GramJS Stream] Primary client error: ${clientErr.message}. Trying fallback client...`);
+            if (clientErr.message && clientErr.message.includes('AUTH_KEY_DUPLICATED')) {
+                tgUserClient = null;
+            }
+            const fallback = client === tgClient ? await getTelegramUserClient() : await getTelegramClient();
+            if (fallback) {
+                client = fallback;
+                const msgs = await client.getMessages(channelPeer, { ids: [messageId] });
+                msg = msgs ? msgs[0] : null;
+            } else {
+                throw clientErr;
+            }
+        }
         if (!msg || !msg.media || !msg.media.document) {
             return res.status(404).send('Audio media not found in Telegram message');
         }

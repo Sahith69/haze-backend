@@ -1473,6 +1473,40 @@ app.get('/api/stream/upgrade', (req, res) => {
 });
 
 /**
+ * 3.2. Direct stream archiving endpoint from mobile client
+ * Guarantees that the backend transcodes the EXACT audio stream that the mobile device is playing
+ */
+app.post('/api/stream/archive', (req, res) => {
+    const { id = '', title = '', artist = '', album = '', cover = '', duration = 0, streamUrl = '' } = req.body;
+    if (!title || !streamUrl) {
+        return res.status(400).json({ error: 'Missing title or streamUrl' });
+    }
+
+    const trackObj = {
+        id: id || `${artist}_${title}`.replace(/[^a-zA-Z0-9]/g, '_'),
+        title,
+        artist: artist || 'Unknown Artist',
+        album: album || 'HAZE FLAC Vault',
+        cover: cover || '',
+        duration: Number(duration) || 216,
+    };
+
+    console.log(`[Stream Archiver] Received verified playing stream for "${title}" by ${artist}: ${streamUrl}`);
+    telegramArchiveQueue.push(trackObj, streamUrl);
+    res.json({ success: true, queued: true });
+});
+
+/**
+ * 3.3. Clear vault endpoint to reset database and cache cleanly
+ */
+app.all('/api/vault/clear', (req, res) => {
+    saveVault([]);
+    streamCache.clear();
+    console.log('[Vault] Database cleared to empty.');
+    res.json({ success: true, count: 0, tracks: [] });
+});
+
+/**
  * 3.5. Direct MTProto Range Stream for Telegram Channel Lossless Audio (Zero 20MB limit!)
  */
 app.get('/api/tg-stream/:messageId', async (req, res) => {

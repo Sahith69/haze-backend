@@ -904,8 +904,20 @@ app.get('/api/tg-stream/:messageId', async (req, res) => {
 
         res.end();
     } catch (err) {
-        console.error(`[GramJS Stream] Error streaming message ${messageId}:`, err);
+        console.error(`[GramJS Stream] Error streaming message ${messageId}:`, err.message);
         if (!res.headersSent) {
+            try {
+                const vault = loadVault();
+                const vTrack = vault.find(t => t.telegramMessageId === messageId);
+                const query = vTrack ? `${vTrack.artist} ${vTrack.title}` : `track ${messageId}`;
+                const fallback = await resolveJioSaavn(query);
+                if (fallback && fallback.streamUrl) {
+                    console.log(`[GramJS Stream] Auto-recovering message ${messageId} via 320k fallback CDN: ${fallback.streamUrl}`);
+                    return res.redirect(302, fallback.streamUrl);
+                }
+            } catch (fallbackErr) {
+                console.warn('[GramJS Stream] Fallback resolution error:', fallbackErr.message);
+            }
             res.status(500).send('Error streaming from Telegram');
         }
     }
@@ -1011,49 +1023,87 @@ app.all('/api/proxy-stream', (req, res) => {
 
 
 /**
- * 5. Synced Lyrics via LRCLIB
+ * 5. Synced Lyrics via LRCLIB + JioSaavn Fallback
  */
 app.get('/api/lyrics', async (req, res) => {
-    const { artist = '', title = '', duration = '' } = req.query;
-    if (!title) {
+    const rawTitle = req.query.title || req.query.track || '';
+    const rawArtist = req.query.artist || '';
+    const duration = req.query.duration || '';
+
+    if (!rawTitle) {
         return res.status(400).json({ error: 'Missing track title' });
     }
+
+    const cleanTitle = cleanQuery(rawTitle).replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const cleanArtist = cleanQuery(rawArtist).split(',')[0].split('&')[0].trim();
 
     try {
         let lrcData = null;
 
-        // Try exact match first
-        const exactUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(title)}&duration=${duration || ''}`;
-        const exactRes = await fetch(exactUrl, {
-            headers: { 'User-Agent': 'HazePlayer/1.0 (https://github.com/Sahith69/haze)' },
-        });
-
-        if (exactRes.ok) {
-            lrcData = await exactRes.json();
-        } else {
-            // Fallback to fuzzy search
-            const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${artist} ${title}`)}`;
-            const searchRes = await fetch(searchUrl, {
-                headers: { 'User-Agent': 'HazePlayer/1.0' },
+        // 1. Exact match on LRCLIB
+        try {
+            const exactUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(cleanArtist || rawArtist)}&track_name=${encodeURIComponent(cleanTitle || rawTitle)}&duration=${duration || ''}`;
+            const exactRes = await fetch(exactUrl, {
+                headers: { 'User-Agent': 'HazePlayer/1.0 (https://github.com/Sahith69/haze)' },
             });
-            if (searchRes.ok) {
-                const searchResults = await searchRes.json();
-                if (Array.isArray(searchResults) && searchResults.length > 0) {
-                    lrcData = searchResults[0];
+            if (exactRes.ok) {
+                lrcData = await exactRes.json();
+            }
+        } catch (e) {}
+
+        // 2. Fuzzy search on LRCLIB if exact match was empty
+        if (!lrcData || (!lrcData.syncedLyrics && !lrcData.plainLyrics)) {
+            try {
+                const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${cleanArtist} ${cleanTitle}`.trim() || rawTitle)}`;
+                const searchRes = await fetch(searchUrl, {
+                    headers: { 'User-Agent': 'HazePlayer/1.0' },
+                });
+                if (searchRes.ok) {
+                    const searchResults = await searchRes.json();
+                    if (Array.isArray(searchResults) && searchResults.length > 0) {
+                        lrcData = searchResults[0];
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (lrcData && (lrcData.syncedLyrics || lrcData.plainLyrics)) {
+            const synced = parseLrc(lrcData.syncedLyrics);
+            return res.json({
+                synced,
+                plain: lrcData.plainLyrics || '',
+                hasSync: synced.length > 0,
+            });
+        }
+
+        // 3. Fallback: JioSaavn Lyrics API
+        try {
+            const saavnSearch = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=3&p=1&q=${encodeURIComponent(`${cleanArtist} ${cleanTitle}`.trim() || rawTitle)}`;
+            const sRes = await fetch(saavnSearch, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' },
+            });
+            if (sRes.ok) {
+                const sData = await sRes.json();
+                const song = (sData.results || [])[0];
+                if (song && song.id && song.more_info?.has_lyrics === 'true') {
+                    const lyricsUrl = `https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&_format=json&ctx=web6dot0&lyrics_id=${song.id}`;
+                    const lRes = await fetch(lyricsUrl);
+                    if (lRes.ok) {
+                        const lData = await lRes.json();
+                        if (lData.lyrics) {
+                            const plain = lData.lyrics.replace(/<br\s*[\/]?>/gi, '\n');
+                            return res.json({
+                                synced: [],
+                                plain,
+                                hasSync: false,
+                            });
+                        }
+                    }
                 }
             }
-        }
+        } catch (sErr) {}
 
-        if (!lrcData) {
-            return res.json({ synced: [], plain: 'No lyrics found for this song.' });
-        }
-
-        const synced = parseLrc(lrcData.syncedLyrics);
-        res.json({
-            synced,
-            plain: lrcData.plainLyrics || '',
-            hasSync: synced.length > 0,
-        });
+        res.json({ synced: [], plain: 'No lyrics available for this track.' });
     } catch (err) {
         console.error('Lyrics error:', err);
         res.status(500).json({ error: 'Failed to fetch lyrics', details: err.message });

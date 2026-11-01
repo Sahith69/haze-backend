@@ -479,13 +479,15 @@ app.get('/api/search', async (req, res) => {
                 for (const item of saavnResults) {
                     const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
                     const artist = item.more_info?.artistMap?.primary_artists?.[0]?.name || item.subtitle || 'Unknown Artist';
+                    const album = item.more_info?.album || 'Single';
                     const cover = item.image ? item.image.replace('150x150', '500x500') : '';
-                    const key = `${title.toLowerCase()}_${artist.toLowerCase()}`;
+                    // Key by title + artist + album to avoid overwriting original studio albums with remixes/covers
+                    const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
                     resultsMap.set(key, {
                         id: `saavn-${item.id}`,
                         title: title || 'Unknown Title',
                         artist: artist || 'Unknown Artist',
-                        album: item.more_info?.album || 'Single',
+                        album,
                         cover,
                         coverLarge: cover,
                         duration: Number(item.more_info?.duration) || 210,
@@ -509,13 +511,14 @@ app.get('/api/search', async (req, res) => {
                 for (const item of itunesResults) {
                     const title = item.trackName || '';
                     const artist = item.artistName || '';
-                    const key = `${title.toLowerCase()}_${artist.toLowerCase()}`;
+                    const album = item.collectionName || 'Single';
+                    const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
                     if (!resultsMap.has(key)) {
                         resultsMap.set(key, {
                             id: String(item.trackId),
                             title: title || 'Unknown Title',
                             artist: artist || 'Unknown Artist',
-                            album: item.collectionName || 'Single',
+                            album,
                             cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg') : '',
                             coverLarge: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg') : '',
                             duration: Math.round((item.trackTimeMillis || 0) / 1000),
@@ -532,10 +535,107 @@ app.get('/api/search', async (req, res) => {
         }
 
         const tracks = Array.from(resultsMap.values());
+
+        // Smart Ranking: Prioritize exact match & authentic studio releases, push remixes/karaoke/covers to bottom
+        function scoreTrack(track, qText) {
+            const q = qText.toLowerCase().trim();
+            const t = (track.title || '').toLowerCase().trim();
+            const a = (track.artist || '').toLowerCase().trim();
+            const alb = (track.album || '').toLowerCase().trim();
+
+            let score = 0;
+            if (t === q) score += 100;
+            else if (t.startsWith(q)) score += 60;
+            else if (t.includes(q)) score += 30;
+
+            if (`${a} ${t}`.includes(q) || `${t} ${a}`.includes(q)) score += 40;
+
+            // Authentic studio album boost
+            if (alb && !alb.includes('remix') && !alb.includes('karaoke') && !alb.includes('tribute') && !alb.includes('cover')) {
+                score += 20;
+            }
+
+            // Penalties for covers, karaoke, remixes unless user explicitly asked
+            const penaltyTerms = ['karaoke', 'tribute', 'piano cover', 'instrumental', 'acoustic cover', 'slowed', 'reverb', 'remix'];
+            for (const term of penaltyTerms) {
+                if ((t.includes(term) || alb.includes(term) || a.includes(term)) && !q.includes(term)) {
+                    score -= 50;
+                }
+            }
+            return score;
+        }
+
+        tracks.sort((a, b) => scoreTrack(b, cleanQ) - scoreTrack(a, cleanQ));
+
         res.json({ tracks });
     } catch (err) {
         console.error('Search error:', err);
         res.status(500).json({ error: 'Failed to search tracks', details: err.message });
+    }
+});
+
+/**
+ * 1.5. Spotify Public Playlist Scraper (Zero Auth / Zero API Key Required)
+ */
+app.get('/api/spotify/playlist', async (req, res) => {
+    const rawUrl = req.query.url || '';
+    if (!rawUrl || !rawUrl.trim()) {
+        return res.status(400).json({ error: 'Missing Spotify playlist URL' });
+    }
+
+    try {
+        const match = rawUrl.match(/playlist[/:]([a-zA-Z0-9]+)/);
+        const playlistId = match ? match[1] : rawUrl.trim();
+
+        const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+        const response = await fetch(embedUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Spotify returned HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+        const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+        if (!nextDataMatch) {
+            throw new Error('Could not parse Spotify playlist data');
+        }
+
+        const parsed = JSON.parse(nextDataMatch[1]);
+        const entity = parsed.props?.pageProps?.state?.data?.entity;
+        if (!entity) {
+            throw new Error('Playlist data entity not found');
+        }
+
+        const playlistName = entity.name || 'Imported Spotify Playlist';
+        const coverArt = entity.coverArt?.sources?.[0]?.url || '';
+        const rawTracks = entity.trackList || [];
+
+        const tracks = rawTracks.map((t, idx) => ({
+            id: `sp-${playlistId}-${idx}`,
+            title: t.title || 'Unknown Track',
+            artist: t.subtitle || 'Unknown Artist',
+            album: playlistName,
+            cover: coverArt,
+            duration: Math.round((t.duration || 210000) / 1000),
+            isHiRes: true,
+            qualityLabel: '320 kbps · Studio Master',
+        }));
+
+        res.json({
+            id: `sp-${playlistId}`,
+            name: playlistName,
+            cover: coverArt,
+            trackCount: tracks.length,
+            tracks,
+        });
+    } catch (err) {
+        console.error('Spotify playlist scrape error:', err.message);
+        res.status(500).json({ error: 'Failed to import Spotify playlist', details: err.message });
     }
 });
 
@@ -658,16 +758,24 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
     if (isFlacRequested) {
         try {
             const vault = loadVault();
+            const cleanCTitle = cleanTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+            const cleanCArtist = cleanArtist.toLowerCase().split(',')[0].split('&')[0].trim();
+
             const vaultMatch = vault.find(t => {
                 if (!t.telegramMessageId) return false;
-                const tTitle = (t.title || '').toLowerCase();
-                const tArtist = (t.artist || '').toLowerCase();
-                const cTitle = cleanTitle ? cleanTitle.toLowerCase() : '';
-                const cArtist = cleanArtist ? cleanArtist.toLowerCase() : '';
+                const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+                const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
 
-                if (cTitle && (tTitle.includes(cTitle) || cTitle.includes(tTitle))) {
-                    if (!cArtist) return true;
-                    return tArtist.includes(cArtist) || cArtist.includes(tArtist);
+                // Strictly avoid matching piano covers, karaoke, tribute unless user explicitly asked
+                const isCoverInVault = (t.title || '').toLowerCase().includes('cover') || (t.artist || '').toLowerCase().includes('cover') || (t.title || '').toLowerCase().includes('piano');
+                const isCoverQueried = cleanCTitle.includes('cover') || cleanCArtist.includes('cover') || cleanCTitle.includes('piano');
+                if (isCoverInVault && !isCoverQueried) return false;
+
+                if (cleanCTitle && tTitle) {
+                    const titleMatch = tTitle === cleanCTitle || tTitle.startsWith(cleanCTitle) || cleanCTitle.startsWith(tTitle);
+                    if (!titleMatch) return false;
+                    if (!cleanCArtist) return true;
+                    return tArtist === cleanCArtist || tArtist.includes(cleanCArtist) || cleanCArtist.includes(tArtist);
                 }
                 return false;
             });
@@ -711,9 +819,11 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 streamUrl: saavnStream.streamUrl,
                 proxyUrl: `/api/proxy-stream?url=${encodeURIComponent(saavnStream.streamUrl)}`,
                 fallbackUrl: `/api/proxy-stream?url=${encodeURIComponent(saavnStream.streamUrl)}`,
-                quality: saavnStream.quality,
-                format: saavnStream.format,
-                bitrate: saavnStream.bitrate,
+                quality: saavnStream.quality || '320 kbps · Studio Master',
+                format: saavnStream.format || 'AAC Studio Master',
+                bitrate: saavnStream.bitrate || '320 kbps',
+                isFlac: false,
+                flacUnavailable: isFlacRequested,
                 isStudioMaster: true,
             };
             streamCache.set(cacheKey, { timestamp: Date.now(), data });

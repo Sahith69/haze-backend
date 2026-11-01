@@ -203,15 +203,15 @@
     "id": "tg_9",
     "title": "Blinding Lights",
     "artist": "The Weeknd",
-    "album": "HAZE FLAC Vault",
-    "duration": 210,
+    "album": "After Hours",
+    "duration": 200,
     "fileSize": 16949146,
     "isHiRes": true,
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 9,
     "streamUrl": "/api/tg-stream/9",
-    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
+    "cover": "https://c.saavncdn.com/077/After-Hours-English-2020-20260804045014-500x500.jpg",
     "gradient": [
       "#7C5CFF",
       "#FF5C9E"

@@ -45,7 +45,7 @@ if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY) {
 // Telegram Cloud Vault Setup (Automatic FLAC archiving)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
-const TELEGRAM_API_ID = process.env.TELEGRAM_API_ID || '19300364';
+const TELEGRAM_API_ID = process.env.TELEGRAM_API_ID || '';
 const TELEGRAM_API_HASH = process.env.TELEGRAM_API_HASH || '';
 const TELEGRAM_USER_SESSION = process.env.TELEGRAM_USER_SESSION || '';
 const AUTO_ARCHIVE_TG = process.env.AUTO_ARCHIVE_TG !== 'false';

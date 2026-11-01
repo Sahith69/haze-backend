@@ -14,7 +14,6 @@
     ],
     "inVault": true,
     "telegramMessageId": 53,
-    "telegramChatId": "",
     "savedAt": "2026-10-31T22:13:23.000Z",
     "fileSize": 24221164,
     "isFlac": true,
@@ -31,7 +30,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 53,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/53",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -56,7 +54,6 @@
     ],
     "inVault": true,
     "telegramMessageId": 51,
-    "telegramChatId": "",
     "savedAt": "2026-10-31T22:06:28.000Z",
     "fileSize": 22402353,
     "isFlac": true,
@@ -73,7 +70,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 50,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/50",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -94,7 +90,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 3,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/3",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -115,7 +110,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 4,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/4",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -136,7 +130,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 10,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/10",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -157,7 +150,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 13,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/13",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -178,7 +170,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 19,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/19",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -199,7 +190,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 24,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/24",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -220,7 +210,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 9,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/9",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -241,7 +230,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 12,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/12",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -262,7 +250,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 7,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/7",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -283,7 +270,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 36,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/36",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -304,7 +290,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 14,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/14",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -325,7 +310,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 11,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/11",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -346,7 +330,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 41,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/41",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -367,7 +350,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 42,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/42",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -388,7 +370,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 43,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/43",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -409,7 +390,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 44,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/44",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -430,7 +410,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 45,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/45",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -451,7 +430,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 46,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/46",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -472,7 +450,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 47,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/47",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -493,7 +470,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 23,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/23",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -514,7 +490,6 @@
     "isFlac": true,
     "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
     "telegramMessageId": 49,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/49",
     "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
     "gradient": [
@@ -543,7 +518,6 @@
     "fileSize": 2547601,
     "isFlac": true,
     "telegramMessageId": 5,
-    "telegramChatId": "",
     "streamUrl": "/api/tg-stream/5"
   }
 ]

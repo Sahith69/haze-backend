@@ -3,8 +3,8 @@ import { StringSession } from 'telegram/sessions/index.js';
 import qrcode from 'qrcode-terminal';
 import readline from 'readline';
 
-const apiId = 19300364;
-const apiHash = '';
+const apiId = parseInt(process.env.TELEGRAM_API_ID, 10) || 0;
+const apiHash = process.env.TELEGRAM_API_HASH || '';
 const stringSession = new StringSession('');
 
 const rl = readline.createInterface({

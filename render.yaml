@@ -13,9 +13,9 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: TELEGRAM_API_ID
-        value: "19300364"
+        sync: false
       - key: TELEGRAM_API_HASH
-        value: ""
+        sync: false
       - key: TELEGRAM_USER_SESSION
         sync: false
       - key: AUTO_ARCHIVE_TG

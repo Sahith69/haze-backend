@@ -18,6 +18,7 @@ export function PlayerProvider({ children }) {
   const [isShuffle, setIsShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState('off'); // 'off' | 'all' | 'one'
   const [audioQuality, setAudioQuality] = useState('HI-RES FLAC');
+  const [isFlac, setIsFlac] = useState(false);
   
   // Modals & Panels
   const [isLyricsOpen, setIsLyricsOpen] = useState(false);
@@ -212,11 +213,12 @@ export function PlayerProvider({ children }) {
     fetchLyrics(track);
 
     try {
-      const res = await fetch(`/api/stream?artist=${encodeURIComponent(track.artist)}&title=${encodeURIComponent(track.title)}`);
+      const res = await fetch(`/api/stream?artist=${encodeURIComponent(track.artist)}&title=${encodeURIComponent(track.title)}&quality=flac`);
       if (!res.ok) throw new Error('Stream resolution failed');
       const data = await res.json();
 
-      setAudioQuality(data.quality || 'HI-RES FLAC');
+      setIsFlac(!!data.isFlac);
+      setAudioQuality(data.quality || (data.isFlac ? '1,411 kbps · Pure Lossless FLAC Master' : '320 kbps · Studio Master'));
 
       if (audioRef.current) {
         // Use proxyUrl to prevent CORS issues with Web Audio API
@@ -267,7 +269,13 @@ export function PlayerProvider({ children }) {
 
     let nextIdx;
     if (isShuffle) {
-      nextIdx = Math.floor(Math.random() * queue.length);
+      if (queue.length > 1) {
+        do {
+          nextIdx = Math.floor(Math.random() * queue.length);
+        } while (nextIdx === queueIndex);
+      } else {
+        nextIdx = 0;
+      }
     } else {
       nextIdx = queueIndex + 1;
       if (nextIdx >= queue.length) {
@@ -403,6 +411,7 @@ export function PlayerProvider({ children }) {
         isShuffle,
         repeatMode,
         audioQuality,
+        isFlac,
         isLyricsOpen,
         isVisualizerOpen,
         isQueueOpen,

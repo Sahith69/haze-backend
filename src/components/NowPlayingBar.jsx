@@ -37,6 +37,7 @@ export default function NowPlayingBar() {
     isShuffle,
     repeatMode,
     audioQuality,
+    isFlac,
     isLyricsOpen,
     isVisualizerOpen,
     isQueueOpen,
@@ -81,8 +82,12 @@ export default function NowPlayingBar() {
                 <span className="text-sm font-semibold text-white truncate hover:underline cursor-pointer">
                   {currentTrack.title}
                 </span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 font-mono tracking-tight shrink-0 border border-neutral-700/60">
-                  {audioQuality.includes('FLAC') ? 'FLAC' : 'HQ'}
+                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono tracking-tight shrink-0 border ${
+                  isFlac
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                    : 'bg-neutral-800 text-neutral-300 border-neutral-700/60'
+                }`}>
+                  {isFlac ? '⚡ FLAC' : '✨ 320k'}
                 </span>
               </div>
               <span className="text-xs text-neutral-400 truncate hover:text-white cursor-pointer mt-0.5">

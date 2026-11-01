@@ -425,11 +425,13 @@ async function archiveTrackToTelegram(track, streamUrl) {
             cover: track.cover || '',
             duration: track.duration || 216,
             isHiRes: true,
+            isFlac: true,
             qualityLabel: '1,411 kbps · FLAC Master',
             gradient: ['#7C5CFF', '#FF5C9E'],
             inVault: true,
             telegramMessageId: messageId,
             telegramChatId: TELEGRAM_CHAT_ID,
+            streamUrl: `/api/tg-stream/${messageId}`,
             savedAt: new Date().toISOString(),
         };
 
@@ -1394,6 +1396,50 @@ app.get('/api/stream', async (req, res) => {
         console.error('Stream resolution error:', err);
         res.status(500).json({ error: 'Failed to resolve audio stream', details: err.message });
     }
+});
+
+/**
+ * 3.1. Fast in-memory check to see if FLAC has finished archiving to Telegram
+ * Used by mobile/web clients for seamless hot-swapping from 320k to FLAC on the fly
+ */
+app.get('/api/stream/upgrade', (req, res) => {
+    const { title = '', artist = '' } = req.query;
+    if (!title) return res.json({ available: false });
+
+    const cleanTitle = cleanQuery(title);
+    const cleanArtist = cleanQuery(artist);
+    const vault = loadVault();
+
+    const cleanCTitle = cleanTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const cleanCArtist = cleanArtist.toLowerCase().split(',')[0].split('&')[0].trim();
+
+    const vaultMatch = vault.find(t => {
+        if (!t.telegramMessageId) return false;
+        const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+        const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
+        if (cleanCTitle !== tTitle) return false;
+
+        if (cleanCArtist && tArtist) {
+            const cTokens = cleanCArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
+            const tTokens = tArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
+            const tokenOverlap = cTokens.some(tok => tArtist.includes(tok)) || tTokens.some(tok => cleanCArtist.includes(tok));
+            if (cleanCArtist !== tArtist && !tokenOverlap) return false;
+        }
+        return true;
+    });
+
+    if (vaultMatch && vaultMatch.telegramMessageId) {
+        return res.json({
+            available: true,
+            isFlac: true,
+            streamUrl: `/api/tg-stream/${vaultMatch.telegramMessageId}`,
+            quality: '1,411 kbps · Pure Lossless FLAC Master',
+            format: '16-bit / 44.1 kHz FLAC Master',
+            bitrate: '1,411 kbps'
+        });
+    }
+
+    res.json({ available: false });
 });
 
 /**

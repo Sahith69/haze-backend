@@ -460,29 +460,83 @@ app.get(['/health', '/api/health'], (req, res) => {
 app.get('/api/search', async (req, res) => {
     const query = req.query.q;
     if (!query || !query.trim()) {
-        return res.json({ tracks: [] });
+        return res.json({ topResult: null, popularTracks: [], otherTracks: [], tracks: [] });
     }
 
     try {
         const cleanQ = query.trim();
         const resultsMap = new Map();
 
-        // 1. JioSaavn Search (Instant, high-res 500x500 covers, full Indian & International library)
-        try {
-            const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=25&p=1&q=${encodeURIComponent(cleanQ)}`;
-            const sRes = await fetch(saavnUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
-            });
-            if (sRes.ok) {
-                const sData = await sRes.json();
-                const saavnResults = sData.results || [];
-                for (const item of saavnResults) {
-                    const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
-                    const artist = item.more_info?.artistMap?.primary_artists?.[0]?.name || item.subtitle || 'Unknown Artist';
-                    const album = item.more_info?.album || 'Single';
-                    const cover = item.image ? item.image.replace('150x150', '500x500') : '';
-                    // Key by title + artist + album to avoid overwriting original studio albums with remixes/covers
-                    const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
+        // 1. Concurrent fetching: Autocomplete, JioSaavn search, iTunes search
+        const autoUrl = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&api_version=4&ctx=web6dot0&query=${encodeURIComponent(cleanQ)}`;
+        const saavnUrl = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=30&p=1&q=${encodeURIComponent(cleanQ)}`;
+        const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQ)}&entity=song&limit=25`;
+
+        const [autoRes, saavnRes, itunesRes] = await Promise.all([
+            fetch(autoUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' } }).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(saavnUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' } }).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(itunesUrl).then(r => r.ok ? r.json() : null).catch(() => null)
+        ]);
+
+        let topResult = null;
+        let artistPopularTracks = [];
+
+        // Check if query points directly to an Artist or specific entity
+        const topEntity = autoRes?.topquery?.data?.[0];
+        if (topEntity && topEntity.type === 'artist' && topEntity.id) {
+            try {
+                const artistDetailsUrl = `https://www.jiosaavn.com/api.php?__call=artist.getArtistPageDetails&_format=json&_marker=0&api_version=4&ctx=web6dot0&artistId=${topEntity.id}&n_song=15&n_album=6`;
+                const artRes = await fetch(artistDetailsUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+                if (artRes && artRes.topSongs && artRes.topSongs.length > 0) {
+                    artistPopularTracks = artRes.topSongs.map(item => {
+                        const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
+                        const artist = item.more_info?.artistMap?.primary_artists?.[0]?.name || topEntity.title;
+                        const album = item.more_info?.album || 'Single';
+                        const cover = item.image ? item.image.replace('150x150', '500x500') : '';
+                        return {
+                            id: `saavn-${item.id}`,
+                            title: title || 'Unknown Title',
+                            artist: artist || 'Unknown Artist',
+                            album,
+                            cover,
+                            coverLarge: cover,
+                            duration: Number(item.more_info?.duration) || 210,
+                            year: item.year || '',
+                            genre: item.language || 'Music',
+                            source: 'jiosaavn'
+                        };
+                    });
+
+                    topResult = {
+                        type: 'artist',
+                        id: topEntity.id,
+                        name: topEntity.title,
+                        subtitle: `${topEntity.description || 'Artist'} · ${artRes.follower_count ? (Number(artRes.follower_count) / 1000000).toFixed(1) + 'M Followers' : 'Popular Artist'}`,
+                        cover: (topEntity.image || '').replace('50x50', '500x500').replace('150x150', '500x500'),
+                        followerCount: artRes.follower_count || null
+                    };
+                }
+            } catch (e) {
+                console.warn('[Search] Artist details error:', e.message);
+            }
+        }
+
+        // Add artist popular tracks first to the results map
+        for (const track of artistPopularTracks) {
+            const key = `${track.title.toLowerCase().trim()}_${track.artist.toLowerCase().trim()}_${track.album.toLowerCase().trim()}`;
+            resultsMap.set(key, track);
+        }
+
+        // Process JioSaavn search results
+        if (saavnRes?.results) {
+            for (const item of saavnRes.results) {
+                const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
+                const artist = item.more_info?.artistMap?.primary_artists?.[0]?.name || item.subtitle || 'Unknown Artist';
+                const album = item.more_info?.album || 'Single';
+                const cover = item.image ? item.image.replace('150x150', '500x500') : '';
+                const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
+                if (!resultsMap.has(key)) {
                     resultsMap.set(key, {
                         id: `saavn-${item.id}`,
                         title: title || 'Unknown Title',
@@ -497,46 +551,36 @@ app.get('/api/search', async (req, res) => {
                     });
                 }
             }
-        } catch (e) {
-            console.warn('[Search] JioSaavn search fallback:', e.message);
         }
 
-        // 2. iTunes Search
-        try {
-            const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQ)}&entity=song&limit=25`;
-            const iRes = await fetch(itunesUrl);
-            if (iRes.ok) {
-                const iData = await iRes.json();
-                const itunesResults = iData.results || [];
-                for (const item of itunesResults) {
-                    const title = item.trackName || '';
-                    const artist = item.artistName || '';
-                    const album = item.collectionName || 'Single';
-                    const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
-                    if (!resultsMap.has(key)) {
-                        resultsMap.set(key, {
-                            id: String(item.trackId),
-                            title: title || 'Unknown Title',
-                            artist: artist || 'Unknown Artist',
-                            album,
-                            cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg') : '',
-                            coverLarge: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg') : '',
-                            duration: Math.round((item.trackTimeMillis || 0) / 1000),
-                            year: item.releaseDate ? item.releaseDate.substring(0, 4) : '',
-                            genre: item.primaryGenreName || 'Music',
-                            isrc: item.isrc || null,
-                            source: 'itunes'
-                        });
-                    }
+        // Process iTunes search results
+        if (itunesRes?.results) {
+            for (const item of itunesRes.results) {
+                const title = item.trackName || '';
+                const artist = item.artistName || '';
+                const album = item.collectionName || 'Single';
+                const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
+                if (!resultsMap.has(key)) {
+                    resultsMap.set(key, {
+                        id: String(item.trackId),
+                        title: title || 'Unknown Title',
+                        artist: artist || 'Unknown Artist',
+                        album,
+                        cover: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg') : '',
+                        coverLarge: item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb.jpg', '1000x1000bb.jpg') : '',
+                        duration: Math.round((item.trackTimeMillis || 0) / 1000),
+                        year: item.releaseDate ? item.releaseDate.substring(0, 4) : '',
+                        genre: item.primaryGenreName || 'Music',
+                        isrc: item.isrc || null,
+                        source: 'itunes'
+                    });
                 }
             }
-        } catch (e) {
-            console.warn('[Search] iTunes search fallback:', e.message);
         }
 
-        const tracks = Array.from(resultsMap.values());
+        const allTracks = Array.from(resultsMap.values());
 
-        // Smart Ranking: Prioritize exact match & authentic studio releases, push remixes/karaoke/covers to bottom
+        // Scoring function
         function scoreTrack(track, qText) {
             const q = qText.toLowerCase().trim();
             const t = (track.title || '').toLowerCase().trim();
@@ -544,30 +588,64 @@ app.get('/api/search', async (req, res) => {
             const alb = (track.album || '').toLowerCase().trim();
 
             let score = 0;
-            if (t === q) score += 100;
-            else if (t.startsWith(q)) score += 60;
-            else if (t.includes(q)) score += 30;
+            if (t === q) score += 120;
+            else if (t.startsWith(q)) score += 70;
+            else if (t.includes(q)) score += 40;
+
+            if (a === q) score += 90;
+            else if (a.startsWith(q)) score += 50;
+            else if (a.includes(q)) score += 30;
 
             if (`${a} ${t}`.includes(q) || `${t} ${a}`.includes(q)) score += 40;
 
-            // Authentic studio album boost
+            // Authentic studio release boost
             if (alb && !alb.includes('remix') && !alb.includes('karaoke') && !alb.includes('tribute') && !alb.includes('cover')) {
-                score += 20;
+                score += 25;
             }
 
-            // Penalties for covers, karaoke, remixes unless user explicitly asked
-            const penaltyTerms = ['karaoke', 'tribute', 'piano cover', 'instrumental', 'acoustic cover', 'slowed', 'reverb', 'remix'];
+            // Severe penalty for unwanted remixes / karaoke / tributes unless user searched for them
+            const penaltyTerms = ['karaoke', 'tribute', 'piano cover', 'instrumental', 'acoustic cover', 'slowed', 'reverb', 'remix', 'ringtone'];
             for (const term of penaltyTerms) {
-                if ((t.includes(term) || alb.includes(term) || a.includes(term)) && !q.includes(term)) {
-                    score -= 50;
+                if ((t.includes(term) || alb.includes(term)) && !q.includes(term)) {
+                    score -= 60;
                 }
             }
             return score;
         }
 
-        tracks.sort((a, b) => scoreTrack(b, cleanQ) - scoreTrack(a, cleanQ));
+        // If not an artist top result, sort by score and determine top song
+        if (!topResult && allTracks.length > 0) {
+            allTracks.sort((a, b) => scoreTrack(b, cleanQ) - scoreTrack(a, cleanQ));
+            const best = allTracks[0];
+            topResult = {
+                type: 'song',
+                id: best.id,
+                title: best.title,
+                name: best.title,
+                subtitle: `${best.artist} · ${best.album || 'Single'}`,
+                cover: best.coverLarge || best.cover,
+                track: best
+            };
+        } else if (artistPopularTracks.length > 0) {
+            // Keep artist's top songs pinned at the top, then sort the remaining tracks
+            const popularIds = new Set(artistPopularTracks.map(t => t.id));
+            const remainingTracks = allTracks.filter(t => !popularIds.has(t.id));
+            remainingTracks.sort((a, b) => scoreTrack(b, cleanQ) - scoreTrack(a, cleanQ));
+            allTracks.length = 0;
+            allTracks.push(...artistPopularTracks, ...remainingTracks);
+        } else {
+            allTracks.sort((a, b) => scoreTrack(b, cleanQ) - scoreTrack(a, cleanQ));
+        }
 
-        res.json({ tracks });
+        const popularTracks = allTracks.slice(0, 5);
+        const otherTracks = allTracks.slice(5);
+
+        res.json({
+            topResult,
+            popularTracks,
+            otherTracks,
+            tracks: allTracks
+        });
     } catch (err) {
         console.error('Search error:', err);
         res.status(500).json({ error: 'Failed to search tracks', details: err.message });

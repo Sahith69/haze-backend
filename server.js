@@ -481,8 +481,12 @@ app.get('/api/search', async (req, res) => {
         let topResult = null;
         let artistPopularTracks = [];
 
-        // Check if query points directly to an Artist or specific entity
+        // Canonical artist detected from verified query analysis
         const topEntity = autoRes?.topquery?.data?.[0];
+        const topSongEntity = autoRes?.songs?.data?.[0];
+        const canonicalArtist = (topSongEntity?.more_info?.primary_artists || topEntity?.more_info?.music || topEntity?.subtitle || '').toLowerCase().trim();
+
+        // Check if query points directly to an Artist
         if (topEntity && topEntity.type === 'artist' && topEntity.id) {
             try {
                 const artistDetailsUrl = `https://www.jiosaavn.com/api.php?__call=artist.getArtistPageDetails&_format=json&_marker=0&api_version=4&ctx=web6dot0&artistId=${topEntity.id}&n_song=15&n_album=6`;
@@ -526,6 +530,31 @@ app.get('/api/search', async (req, res) => {
         for (const track of artistPopularTracks) {
             const key = `${track.title.toLowerCase().trim()}_${track.artist.toLowerCase().trim()}_${track.album.toLowerCase().trim()}`;
             resultsMap.set(key, track);
+        }
+
+        // 1.5 Add verified songs from Autocomplete (official canonical records)
+        if (autoRes?.songs?.data) {
+            for (const item of autoRes.songs.data) {
+                const title = item.title ? item.title.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&') : '';
+                const artist = item.more_info?.primary_artists || item.subtitle || 'Unknown Artist';
+                const album = item.more_info?.album || 'Single';
+                const cover = item.image ? item.image.replace('150x150', '500x500') : '';
+                const key = `${title.toLowerCase().trim()}_${artist.toLowerCase().trim()}_${album.toLowerCase().trim()}`;
+                if (!resultsMap.has(key)) {
+                    resultsMap.set(key, {
+                        id: `saavn-${item.id}`,
+                        title: title || 'Unknown Title',
+                        artist: artist || 'Unknown Artist',
+                        album,
+                        cover,
+                        coverLarge: cover,
+                        duration: 215,
+                        year: item.year || '',
+                        genre: item.more_info?.language || 'Music',
+                        source: 'jiosaavn'
+                    });
+                }
+            }
         }
 
         // Process JioSaavn search results
@@ -586,11 +615,17 @@ app.get('/api/search', async (req, res) => {
             const t = (track.title || '').toLowerCase().trim();
             const a = (track.artist || '').toLowerCase().trim();
             const alb = (track.album || '').toLowerCase().trim();
+            const g = (track.genre || '').toLowerCase().trim();
 
             let score = 0;
             if (t === q) score += 120;
             else if (t.startsWith(q)) score += 70;
             else if (t.includes(q)) score += 40;
+
+            // Huge boost if matching the canonical/verified original artist
+            if (canonicalArtist && (a.includes(canonicalArtist) || canonicalArtist.includes(a))) {
+                score += 250;
+            }
 
             if (a === q) score += 90;
             else if (a.startsWith(q)) score += 50;
@@ -603,11 +638,11 @@ app.get('/api/search', async (req, res) => {
                 score += 25;
             }
 
-            // Severe penalty for unwanted remixes / karaoke / tributes unless user searched for them
-            const penaltyTerms = ['karaoke', 'tribute', 'piano cover', 'instrumental', 'acoustic cover', 'slowed', 'reverb', 'remix', 'ringtone'];
+            // Severe penalty for unwanted remixes / karaoke / tributes / chill / piano / instrumental covers
+            const penaltyTerms = ['karaoke', 'tribute', 'piano', 'chill', 'quartet', 'instrumental', 'acoustic cover', 'slowed', 'reverb', 'remix', 'ringtone', 'kidz bop'];
             for (const term of penaltyTerms) {
-                if ((t.includes(term) || alb.includes(term)) && !q.includes(term)) {
-                    score -= 60;
+                if ((t.includes(term) || alb.includes(term) || a.includes(term) || g.includes(term)) && !q.includes(term)) {
+                    score -= 90;
                 }
             }
             return score;

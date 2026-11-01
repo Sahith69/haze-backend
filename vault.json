@@ -60,26 +60,6 @@
     "streamUrl": "/api/tg-stream/51"
   },
   {
-    "id": "tg_50",
-    "title": "Espresso (Originally Performed by Sabrina Carpenter) [Instrumental]",
-    "artist": "Vox Freaks",
-    "album": "HAZE FLAC Vault",
-    "duration": 171,
-    "fileSize": 15810264,
-    "isHiRes": true,
-    "isFlac": true,
-    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
-    "telegramMessageId": 50,
-    "streamUrl": "/api/tg-stream/50",
-    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
-    "gradient": [
-      "#7C5CFF",
-      "#FF5C9E"
-    ],
-    "inVault": true,
-    "savedAt": "2026-10-31T22:05:53.000Z"
-  },
-  {
     "id": "tg_3",
     "title": "Get Lucky",
     "artist": "Daft Punk",
@@ -478,26 +458,6 @@
     ],
     "inVault": true,
     "savedAt": "2026-10-31T20:38:10.000Z"
-  },
-  {
-    "id": "tg_49",
-    "title": "Blinding Lights (Original by The Weeknd)",
-    "artist": "Piano Cover by Lily Morgan",
-    "album": "HAZE FLAC Vault",
-    "duration": 195,
-    "fileSize": 12479542,
-    "isHiRes": true,
-    "isFlac": true,
-    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
-    "telegramMessageId": 49,
-    "streamUrl": "/api/tg-stream/49",
-    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
-    "gradient": [
-      "#7C5CFF",
-      "#FF5C9E"
-    ],
-    "inVault": true,
-    "savedAt": "2026-10-31T22:00:37.000Z"
   },
   {
     "id": "tg_5",

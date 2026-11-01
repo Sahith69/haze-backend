@@ -688,6 +688,40 @@ app.get('/api/search', async (req, res) => {
 });
 
 /**
+ * Fast individual album cover resolver for playlist imports
+ */
+async function resolveTrackCover(title, artist) {
+    const cleanT = (title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const cleanA = (artist || '').split(',')[0].split('&')[0].trim();
+    if (!cleanT) return null;
+
+    // 1. Apple Music / iTunes 600x600 CDN
+    try {
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanA + ' ' + cleanT)}&entity=song&limit=3`;
+        const res = await fetch(url).then(r => (r.ok ? r.json() : null));
+        if (res && res.results && res.results.length > 0) {
+            for (const item of res.results) {
+                if (item.artworkUrl100) {
+                    return item.artworkUrl100.replace('100x100bb.jpg', '600x600bb.jpg');
+                }
+            }
+        }
+    } catch (e) {}
+
+    // 2. JioSaavn 500x500 CDN
+    try {
+        const url = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&api_version=4&ctx=web6dot0&query=${encodeURIComponent(cleanA + ' ' + cleanT)}`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => (r.ok ? r.json() : null));
+        const match = res?.songs?.data?.[0];
+        if (match && match.image) {
+            return match.image.replace('150x150', '500x500').replace('50x50', '500x500');
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+/**
  * 1.5. Spotify Public Playlist Scraper (Zero Auth / Zero API Key Required)
  */
 app.get('/api/spotify/playlist', async (req, res) => {
@@ -728,15 +762,21 @@ app.get('/api/spotify/playlist', async (req, res) => {
         const coverArt = entity.coverArt?.sources?.[0]?.url || '';
         const rawTracks = entity.trackList || [];
 
-        const tracks = rawTracks.map((t, idx) => ({
-            id: `sp-${playlistId}-${idx}`,
-            title: t.title || 'Unknown Track',
-            artist: t.subtitle || 'Unknown Artist',
-            album: playlistName,
-            cover: coverArt,
-            duration: Math.round((t.duration || 210000) / 1000),
-            isHiRes: true,
-            qualityLabel: '320 kbps · Studio Master',
+        // Resolve individual official album covers concurrently
+        const tracks = await Promise.all(rawTracks.map(async (t, idx) => {
+            const trackTitle = t.title || 'Unknown Track';
+            const trackArtist = t.subtitle || 'Unknown Artist';
+            const individualCover = await resolveTrackCover(trackTitle, trackArtist);
+            return {
+                id: `sp-${playlistId}-${idx}`,
+                title: trackTitle,
+                artist: trackArtist,
+                album: playlistName,
+                cover: individualCover || coverArt,
+                duration: Math.round((t.duration || 210000) / 1000),
+                isHiRes: true,
+                qualityLabel: '320 kbps · Studio Master',
+            };
         }));
 
         res.json({
@@ -879,16 +919,20 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
                 const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
 
-                // Strictly avoid matching piano covers, karaoke, tribute unless user explicitly asked
-                const isCoverInVault = (t.title || '').toLowerCase().includes('cover') || (t.artist || '').toLowerCase().includes('cover') || (t.title || '').toLowerCase().includes('piano');
-                const isCoverQueried = cleanCTitle.includes('cover') || cleanCArtist.includes('cover') || cleanCTitle.includes('piano');
-                if (isCoverInVault && !isCoverQueried) return false;
+                // Reject any cover, piano, karaoke, instrumental, tribute, or remix unless user explicitly requested it
+                const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone'];
+                const rawVaultTitle = (t.title || '').toLowerCase();
+                const rawVaultArtist = (t.artist || '').toLowerCase();
+                const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
+                const userWantedPenalty = penaltyTerms.some(term => cleanCTitle.includes(term) || cleanCArtist.includes(term));
+                if (hasPenalty && !userWantedPenalty) return false;
 
+                // Strict title match (must match exact title)
                 if (cleanCTitle && tTitle) {
-                    const titleMatch = tTitle === cleanCTitle || tTitle.startsWith(cleanCTitle) || cleanCTitle.startsWith(tTitle);
-                    if (!titleMatch) return false;
+                    if (tTitle !== cleanCTitle) return false;
                     if (!cleanCArtist) return true;
-                    return tArtist === cleanCArtist || tArtist.includes(cleanCArtist) || cleanCArtist.includes(tArtist);
+                    // Strict primary artist match
+                    return tArtist === cleanCArtist || tArtist.startsWith(cleanCArtist) || cleanCArtist.startsWith(tArtist);
                 }
                 return false;
             });

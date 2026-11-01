@@ -180,26 +180,6 @@
     "savedAt": "2026-10-31T20:38:10.000Z"
   },
   {
-    "id": "tg_9",
-    "title": "Blinding Lights",
-    "artist": "The Weeknd",
-    "album": "After Hours",
-    "duration": 200,
-    "fileSize": 16949146,
-    "isHiRes": true,
-    "isFlac": true,
-    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
-    "telegramMessageId": 9,
-    "streamUrl": "/api/tg-stream/9",
-    "cover": "https://c.saavncdn.com/077/After-Hours-English-2020-20260804045014-500x500.jpg",
-    "gradient": [
-      "#7C5CFF",
-      "#FF5C9E"
-    ],
-    "inVault": true,
-    "savedAt": "2026-10-31T19:09:27.000Z"
-  },
-  {
     "id": "tg_12",
     "title": "Raga of Revenge (From \"DC\")",
     "artist": "Anirudh Ravichander",

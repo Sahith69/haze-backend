@@ -890,7 +890,7 @@ async function resolveJioSaavn(searchQuery) {
 /**
  * 3. Resolve direct audio stream using multi-strategy fallbacks
  */
-async function resolveTrackAudio(artist = '', title = '', query = '', requestedQuality = '') {
+async function resolveTrackAudio(artist = '', title = '', query = '', requestedQuality = '', expectedDuration = 0) {
     const cleanArtist = cleanQuery(artist);
     const cleanTitle = cleanQuery(title);
     const searchQuery = cleanQuery(query || `${cleanArtist} ${cleanTitle}`);
@@ -913,6 +913,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
             const vault = loadVault();
             const cleanCTitle = cleanTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
             const cleanCArtist = cleanArtist.toLowerCase().split(',')[0].split('&')[0].trim();
+            const numExpectedDuration = Number(expectedDuration) || 0;
 
             const vaultMatch = vault.find(t => {
                 if (!t.telegramMessageId) return false;
@@ -928,13 +929,24 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 if (hasPenalty && !userWantedPenalty) return false;
 
                 // Strict title match (must match exact title)
-                if (cleanCTitle && tTitle) {
-                    if (tTitle !== cleanCTitle) return false;
-                    if (!cleanCArtist) return true;
-                    // Strict primary artist match
-                    return tArtist === cleanCArtist || tArtist.startsWith(cleanCArtist) || cleanCArtist.startsWith(tArtist);
+                if (!cleanCTitle || !tTitle || tTitle !== cleanCTitle) return false;
+
+                // Strict primary artist match
+                if (cleanCArtist && tArtist) {
+                    const artistMatches = tArtist === cleanCArtist || tArtist.startsWith(cleanCArtist) || cleanCArtist.startsWith(tArtist);
+                    if (!artistMatches) return false;
                 }
-                return false;
+
+                // Strict duration check with ±4s tolerance window (accounts for CD pregap silence)
+                const vaultDuration = Number(t.duration) || 0;
+                if (numExpectedDuration > 10 && vaultDuration > 10) {
+                    if (Math.abs(vaultDuration - numExpectedDuration) > 4) {
+                        console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
+                        return false;
+                    }
+                }
+
+                return true;
             });
             if (vaultMatch && vaultMatch.telegramMessageId) {
                 console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
@@ -1058,7 +1070,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
 app.get('/api/stream', async (req, res) => {
     const { artist = '', title = '', query = '', id = '', duration = '', cover = '', album = '', quality = '' } = req.query;
     try {
-        const data = await resolveTrackAudio(artist, title, query, quality);
+        const data = await resolveTrackAudio(artist, title, query, quality, duration);
         res.json(data);
 
         // Auto-archive in background to Telegram FLAC Vault if configured

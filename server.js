@@ -1024,22 +1024,29 @@ app.get('/api/radio', async (req, res) => {
  * Penalises covers, remixes, karaoke, etc. so we always get the original version.
  */
 function scoreJioSaavnResult(result, wantedTitle = '', wantedArtist = '') {
-    const PENALTY_TERMS = ['cover', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'remix', 'ringtone', 'piano', 'slowed', 'sped up', 'nightcore', 'acoustic', 'live'];
+    const PENALTY_TERMS = ['cover', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'remix', 'ringtone', 'piano', 'slowed', 'sped up', 'nightcore', 'acoustic', 'live', 'lullaby'];
     const rTitle = (result.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
-    const rArtist = ((result.subtitle || '') + ' ' + (result.more_info?.primary_artists || '')).toLowerCase();
+    const rArtist = [
+        result.subtitle || '',
+        result.more_info?.primary_artists || '',
+        result.more_info?.singers || '',
+        result.more_info?.music || '',
+    ].join(' ').toLowerCase();
     const wTitle = wantedTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
     const wArtist = wantedArtist.toLowerCase();
 
     let score = 0;
-    if (rTitle === wTitle) score += 60;
+    if (rTitle === wTitle) score += 80;
     else if (rTitle.includes(wTitle) || wTitle.includes(rTitle)) score += 30;
 
     const wTokens = wArtist.split(/[\s,&]+/).filter(t => t.length > 2);
-    if (wTokens.some(tok => rArtist.includes(tok))) score += 40;
+    if (wTokens.length > 0 && wTokens.some(tok => rArtist.includes(tok))) {
+        score += 50;
+    }
 
     const wantedPenalty = PENALTY_TERMS.some(pt => wTitle.includes(pt) || wArtist.includes(pt));
     const hasPenalty = PENALTY_TERMS.some(pt => (result.title || '').toLowerCase().includes(pt));
-    if (hasPenalty && !wantedPenalty) score -= 80;
+    if (hasPenalty && !wantedPenalty) score -= 150;
 
     return score;
 }
@@ -1139,11 +1146,14 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 // Strict title match (must match exact title)
                 if (!cleanCTitle || !tTitle || tTitle !== cleanCTitle) return false;
 
-                // Strict primary artist match
-                if (cleanCArtist && tArtist) {
-                    const artistMatches = tArtist === cleanCArtist || tArtist.startsWith(cleanCArtist) || cleanCArtist.startsWith(tArtist);
-                    if (!artistMatches) return false;
-                }
+                // Strict primary artist match: both must exist and share artist tokens
+                if (!cleanCArtist || !tArtist) return false;
+                const normCArtist = cleanCArtist.toLowerCase().trim();
+                const normTArtist = tArtist.toLowerCase().trim();
+                const cTokens = normCArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
+                const tTokens = normTArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
+                const tokenOverlap = cTokens.some(tok => normTArtist.includes(tok)) || tTokens.some(tok => normCArtist.includes(tok));
+                if (normCArtist !== normTArtist && !tokenOverlap) return false;
 
                 // Strict duration check: placeholder durations (210/216) are bypassed; real durations must match within ±60s
                 const vaultDuration = Number(t.duration) || 0;
@@ -1298,28 +1308,6 @@ app.get('/api/stream', async (req, res) => {
     try {
         const data = await resolveTrackAudio(artist, title, query, quality, duration);
         res.json(data);
-
-        // Auto-archive in background to Telegram FLAC Vault if configured
-        if (AUTO_ARCHIVE_TG && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID && data.streamUrl) {
-            const trackObj = {
-                id: id || `${artist}_${title}`.replace(/[^a-zA-Z0-9]/g, '_'),
-                title: title || query || 'Unknown Title',
-                artist: artist || 'Unknown Artist',
-                album: album || 'HAZE FLAC Vault',
-                cover: cover || '',
-                duration: Number(duration) || 216,
-            };
-            archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
-                console.warn('[Auto Archive TG] Background error:', e.message);
-            });
-
-            // If userbot is configured, automatically fetch genuine FLAC from music downloader bot
-            if (TELEGRAM_USER_SESSION) {
-                fetchFlacFromTelegramBot(trackObj).catch(e => {
-                    console.warn('[Userbot Fetch] Background error:', e.message);
-                });
-            }
-        }
     } catch (err) {
         console.error('Stream resolution error:', err);
         res.status(500).json({ error: 'Failed to resolve audio stream', details: err.message });

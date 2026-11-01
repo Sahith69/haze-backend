@@ -20,26 +20,6 @@
     "streamUrl": "/api/tg-stream/53"
   },
   {
-    "id": "tg_53",
-    "title": "BIRDS OF A FEATHER",
-    "artist": "Billie Eilish",
-    "album": "HAZE FLAC Vault",
-    "duration": 210,
-    "fileSize": 24221164,
-    "isHiRes": true,
-    "isFlac": true,
-    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
-    "telegramMessageId": 53,
-    "streamUrl": "/api/tg-stream/53",
-    "cover": "https://c.saavncdn.com/372/b7f9937fefd686876e90be4a96c9a6e9_500x500.jpg",
-    "gradient": [
-      "#7C5CFF",
-      "#FF5C9E"
-    ],
-    "inVault": true,
-    "savedAt": "2026-10-31T22:13:23.000Z"
-  },
-  {
     "id": "tg_51",
     "title": "Espresso",
     "artist": "Sabrina Carpenter",

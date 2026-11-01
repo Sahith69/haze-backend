@@ -17,6 +17,15 @@ import bigInt from 'big-integer';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
+
+// Load local .env file if running locally
+const localEnvPath = path.join(__dirname, '.env');
+if (process.loadEnvFile && fs.existsSync(localEnvPath)) {
+    try {
+        process.loadEnvFile(localEnvPath);
+    } catch (e) {}
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

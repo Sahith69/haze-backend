@@ -427,23 +427,27 @@ function cleanQuery(str = '') {
 
 /**
  * Parse LRC synced lyrics format into timestamped array
+ * Supports multi-timestamp lines, single-digit minutes, and musical pause markers
  */
 function parseLrc(lrcText = '') {
-    if (!lrcText) return [];
+    if (!lrcText || typeof lrcText !== 'string') return [];
     const lines = lrcText.split('\n');
     const result = [];
-    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/;
+    const timestampRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
 
-    for (const line of lines) {
-        const match = line.match(timeRegex);
-        if (match) {
-            const minutes = parseInt(match[1], 10);
-            const seconds = parseInt(match[2], 10);
-            const fraction = parseFloat(`0.${match[3]}`);
-            const time = minutes * 60 + seconds + fraction;
-            const text = match[4].trim();
-            if (text) {
-                result.push({ time, text });
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const matches = [...line.matchAll(timestampRegex)];
+        if (matches.length > 0) {
+            const text = line.replace(timestampRegex, '').trim();
+            for (const match of matches) {
+                const minutes = parseInt(match[1], 10);
+                const seconds = parseInt(match[2], 10);
+                const millisStr = match[3] || '0';
+                const millis = parseInt(millisStr.padEnd(3, '0').slice(0, 3), 10);
+                const time = minutes * 60 + seconds + millis / 1000;
+                result.push({ time, text: text || '♪' });
             }
         }
     }
@@ -731,8 +735,15 @@ app.get('/api/spotify/playlist', async (req, res) => {
     }
 
     try {
-        const match = rawUrl.match(/playlist[/:]([a-zA-Z0-9]+)/);
-        const playlistId = match ? match[1] : rawUrl.trim();
+        let targetUrl = rawUrl.trim();
+        if (targetUrl.includes('spotify.link')) {
+            try {
+                const headRes = await fetch(targetUrl, { method: 'HEAD', redirect: 'follow' });
+                targetUrl = headRes.url || targetUrl;
+            } catch (e) {}
+        }
+        const match = targetUrl.match(/playlist[/:]([a-zA-Z0-9]+)/);
+        const playlistId = match ? match[1] : targetUrl.replace(/[^a-zA-Z0-9]/g, '');
 
         const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
         const response = await fetch(embedUrl, {
@@ -840,6 +851,160 @@ app.get('/api/trending', async (req, res) => {
             return res.json({ tracks: trendingCache.data });
         }
         res.status(500).json({ error: 'Failed to fetch trending tracks', details: err.message });
+    }
+});
+
+/**
+ * 2.5. Intelligent Vibe & Artist Radio Discovery Endpoint
+ * Features:
+ * - Queries Deezer similar-artist graph + curated high-affinity genre fallbacks.
+ * - Extracts hit tracks per artist from iTunes / JioSaavn.
+ * - Strictly filters out the seed song title (remixes, acoustic, slowed, covers) to avoid duplicate titles.
+ * - Caches radio results in-memory for 1 hour for instantaneous responses.
+ */
+const RADIO_GENRE_AFFINITIES = {
+    pop: ['Dua Lipa', 'Billie Eilish', 'Olivia Rodrigo', 'Ariana Grande', 'Taylor Swift', 'Sabrina Carpenter', 'Shawn Mendes', 'Selena Gomez'],
+    rnb: ['The Weeknd', 'SZA', 'Frank Ocean', 'Daniel Caesar', 'Brent Faiyaz', 'Joji', 'Giveon', 'Summer Walker'],
+    soul: ['The Weeknd', 'SZA', 'Frank Ocean', 'Daniel Caesar', 'Leon Bridges', 'Sam Cooke'],
+    hiphop: ['Travis Scott', 'Drake', 'Kendrick Lamar', '21 Savage', 'Metro Boomin', 'Future', 'Post Malone', 'J. Cole'],
+    rap: ['Travis Scott', 'Drake', 'Kendrick Lamar', '21 Savage', 'Metro Boomin', 'Future', 'Post Malone', 'J. Cole'],
+    darkpop: ['Elley Duhe', 'Sub Urban', 'AViVA', 'Melanie Martinez', 'Billie Eilish', 'Alan Walker', 'Gryffin', 'ILLENIUM'],
+    alternative: ['Arctic Monkeys', 'The Neighbourhood', 'Cigarettes After Sex', 'Lorde', 'Lana Del Rey', 'girl in red', 'Conan Gray'],
+    indie: ['Arctic Monkeys', 'The Neighbourhood', 'Cigarettes After Sex', 'Lorde', 'Lana Del Rey', 'girl in red', 'Conan Gray'],
+    rock: ['Imagine Dragons', 'Coldplay', 'OneRepublic', 'Linkin Park', 'The Killers', 'Fall Out Boy'],
+    dance: ['Calvin Harris', 'The Chainsmokers', 'David Guetta', 'Martin Garrix', 'Kygo', 'Zedd', 'Avicii', 'Marshmello'],
+    edm: ['Calvin Harris', 'The Chainsmokers', 'David Guetta', 'Martin Garrix', 'Kygo', 'Zedd', 'Avicii', 'Marshmello'],
+    electronic: ['Calvin Harris', 'The Chainsmokers', 'David Guetta', 'Martin Garrix', 'Kygo', 'Zedd', 'Avicii', 'Marshmello'],
+    bollywood: ['Arijit Singh', 'Atif Aslam', 'Pritam', 'Mohit Chauhan', 'Shreya Ghoshal', 'Armaan Malik', 'Vishal Mishra', 'Darshan Raval', 'Sachin-Jigar'],
+    hindi: ['Arijit Singh', 'Atif Aslam', 'Pritam', 'Mohit Chauhan', 'Shreya Ghoshal', 'Armaan Malik', 'Vishal Mishra', 'Darshan Raval', 'Sachin-Jigar'],
+    punjabi: ['Diljit Dosanjh', 'AP Dhillon', 'Karan Aujla', 'Sidhu Moose Wala', 'Shubh', 'Gurinder Gill'],
+    telugu: ['Anirudh Ravichander', 'Devi Sri Prasad', 'Thaman S', 'Sid Sriram', 'A.R. Rahman', 'Ram Miriyala'],
+    tamil: ['Anirudh Ravichander', 'A.R. Rahman', 'Harris Jayaraj', 'Yuvan Shankar Raja', 'Santhosh Narayanan', 'Sid Sriram'],
+    south: ['Anirudh Ravichander', 'A.R. Rahman', 'Sid Sriram', 'Harris Jayaraj', 'Yuvan Shankar Raja', 'Devi Sri Prasad']
+};
+
+function cleanRadioTitle(t = '') {
+    return t
+        .toLowerCase()
+        .replace(/\(.*?\)|\[.*?\]/g, '')
+        .replace(/feat\..*|ft\..*/gi, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .trim();
+}
+
+function radioTitlesMatch(t1 = '', t2 = '') {
+    const c1 = cleanRadioTitle(t1);
+    const c2 = cleanRadioTitle(t2);
+    if (!c1 || !c2) return false;
+    if (c1 === c2) return true;
+    if (c1.length > 4 && c2.length > 4) {
+        if (c1.includes(c2) || c2.includes(c1)) return true;
+    }
+    return false;
+}
+
+const radioCache = new Map();
+const RADIO_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+app.get('/api/radio', async (req, res) => {
+    const { artist = '', genre = '', exclude = '', limit = 15 } = req.query;
+    const cleanArtist = artist.split(/[,&]/)[0].trim();
+    const cacheKey = `${cleanArtist.toLowerCase()}_${(genre || '').toLowerCase()}_${(exclude || '').toLowerCase()}`;
+
+    const cached = radioCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < RADIO_CACHE_TTL) {
+        return res.json({ tracks: cached.data });
+    }
+
+    try {
+        let relatedArtists = [];
+        // 1. Query Deezer related artist graph
+        if (cleanArtist) {
+            try {
+                const dRes = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(cleanArtist)}`).then(r => r.ok ? r.json() : null);
+                if (dRes?.data?.[0]?.id) {
+                    const relRes = await fetch(`https://api.deezer.com/artist/${dRes.data[0].id}/related`).then(r => r.ok ? r.json() : null);
+                    if (relRes?.data && Array.isArray(relRes.data)) {
+                        relatedArtists = relRes.data.slice(0, 6).map(a => a.name);
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 2. Fallback to genre affinity maps
+        const gLower = (genre || '').toLowerCase();
+        let fallbackArtists = [];
+        for (const [gKey, list] of Object.entries(RADIO_GENRE_AFFINITIES)) {
+            if (gLower.includes(gKey) || cleanArtist.toLowerCase().includes(gKey)) {
+                fallbackArtists = list;
+                break;
+            }
+        }
+        if (fallbackArtists.length === 0) {
+            fallbackArtists = RADIO_GENRE_AFFINITIES.pop;
+        }
+
+        const combinedArtists = Array.from(new Set([cleanArtist, ...relatedArtists, ...fallbackArtists].filter(Boolean))).slice(0, 6);
+
+        const seenTitles = new Set();
+        if (exclude) {
+            seenTitles.add(cleanRadioTitle(exclude));
+        }
+
+        const radioTracks = [];
+        for (const art of combinedArtists) {
+            if (radioTracks.length >= Number(limit)) break;
+            try {
+                const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(art)}&entity=song&limit=6`;
+                const itunesRes = await fetch(itunesUrl).then(r => r.ok ? r.json() : null);
+                let tracksFromArtist = 0;
+
+                for (const item of (itunesRes?.results || [])) {
+                    if (tracksFromArtist >= 3) break;
+                    if (radioTracks.length >= Number(limit)) break;
+
+                    const title = item.trackName || '';
+                    if (!title) continue;
+                    if (exclude && radioTitlesMatch(title, exclude)) continue;
+
+                    const cT = cleanRadioTitle(title);
+                    if (seenTitles.has(cT)) continue;
+                    seenTitles.add(cT);
+
+                    const lowerTitle = title.toLowerCase();
+                    const penalty = ['karaoke', 'instrumental', 'tribute', 'ringtone', 'originally performed', 'piano version'];
+                    if (penalty.some(p => lowerTitle.includes(p))) continue;
+
+                    const rawCover = item.artworkUrl100 || '';
+                    const cover = rawCover.replace('100x100bb.jpg', '600x600bb.jpg');
+                    const coverLarge = rawCover.replace('100x100bb.jpg', '1000x1000bb.jpg');
+
+                    radioTracks.push({
+                        id: `radio-${item.trackId}`,
+                        title,
+                        artist: item.artistName || art,
+                        album: item.collectionName || 'Single',
+                        cover,
+                        coverLarge,
+                        duration: Math.round((item.trackTimeMillis || 210000) / 1000),
+                        year: item.releaseDate ? item.releaseDate.substring(0, 4) : '2026',
+                        genre: item.primaryGenreName || genre || 'Music',
+                        isHiRes: true,
+                        qualityLabel: '320 kbps · Studio Master',
+                        source: 'radio'
+                    });
+                    tracksFromArtist++;
+                }
+            } catch (e) {}
+        }
+
+        if (radioTracks.length > 0) {
+            radioCache.set(cacheKey, { timestamp: Date.now(), data: radioTracks });
+        }
+        res.json({ tracks: radioTracks });
+    } catch (err) {
+        console.error('Radio endpoint error:', err.message);
+        res.json({ tracks: [] });
     }
 });
 

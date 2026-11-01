@@ -1,5 +1,105 @@
 [
   {
+    "id": "Sabrina_Carpenter_Espresso",
+    "title": "Espresso",
+    "artist": "Sabrina Carpenter",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 175,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 141,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/141",
+    "savedAt": "2026-11-01T19:11:07.278Z"
+  },
+  {
+    "id": "Travis_Scott_FE_N",
+    "title": "FE!N",
+    "artist": "Travis Scott",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 139,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/139",
+    "savedAt": "2026-11-01T19:03:36.765Z"
+  },
+  {
+    "id": "The_Weeknd_Blinding_Lights",
+    "title": "Blinding Lights",
+    "artist": "The Weeknd",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 136,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/136",
+    "savedAt": "2026-11-01T19:02:56.880Z"
+  },
+  {
+    "id": "Anirudh_Ravichander_Hukum___Thalaivar_Alappara",
+    "title": "Hukum - Thalaivar Alappara",
+    "artist": "Anirudh Ravichander",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 137,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/137",
+    "savedAt": "2026-11-01T19:00:52.284Z"
+  },
+  {
+    "id": "Taylor_Swift_Cruel_Summer",
+    "title": "Cruel Summer",
+    "artist": "Taylor Swift",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 132,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/132",
+    "savedAt": "2026-11-01T18:54:28.514Z"
+  },
+  {
     "id": "The_Weeknd_Starboy",
     "title": "Starboy",
     "artist": "The Weeknd",

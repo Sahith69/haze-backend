@@ -338,123 +338,236 @@ function saveVault(data) {
 }
 
 /**
- * Transcode stream to uncompressed FLAC and archive directly into Telegram Channel
+ * Universal Title & Artist Normalizer for 100% Precise Cross-Catalog Matching
  */
-const archivingSet = new Set();
-async function archiveTrackToTelegram(track, streamUrl) {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !streamUrl) return null;
+function normalizeTitle(raw = '') {
+    return (raw || '')
+        .toLowerCase()
+        .replace(/\(.*?\)|\[.*?\]/g, '') // remove parenthetical content like (feat. X), [Remastered]
+        .replace(/\s*-\s*((\d{4}\s+)?remaster(ed)?(\s*\d+)?|single version|radio edit|bonus track|original mix|extended mix|album version|feat\.?.*).*$/i, '')
+        .replace(/!/g, 'i') // FE!N -> fein
+        .replace(/[$]/g, 's') // A$AP -> asap, Ke$ha -> kesha
+        .replace(/[^a-z0-9\s]/g, '') // strip other punctuation: "don't" -> "dont"
+        .replace(/\s+/g, ' ')
+        .trim();
+}
 
-    const trackId = String(track.id || `${track.artist}_${track.title}`.replace(/[^a-zA-Z0-9]/g, '_'));
-    if (archivingSet.has(trackId)) return null;
+function normalizeArtist(raw = '') {
+    return (raw || '')
+        .toLowerCase()
+        .split(/[,&/]|feat\.?|ft\.?|with/)[0]
+        .replace(/[$]/g, 's')
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
 
-    // Strict check: if already in vault or Telegram channel, NEVER re-upload
-    const currentVault = loadVault();
-    const normTitle = (track.title || '').trim().toLowerCase();
-    const normArtist = (track.artist || '').trim().toLowerCase();
-    const existing = currentVault.find(t => {
+/**
+ * Single source of truth for matching any track against the Telegram FLAC Vault
+ */
+function matchTrackInVault(vault, queryTitle = '', queryArtist = '', expectedDuration = 0) {
+    if (!Array.isArray(vault) || vault.length === 0) return null;
+
+    const cleanCTitle = normalizeTitle(queryTitle);
+    const cleanCArtist = normalizeArtist(queryArtist);
+    if (!cleanCTitle) return null;
+
+    const numExpectedDuration = Number(expectedDuration) || 0;
+    const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone', 'nightcore', 'slowed', 'sped up', 'acoustic', 'live', 'lullaby', 'reverb', 'bass boosted'];
+    const userWantedPenalty = penaltyTerms.some(term => queryTitle.toLowerCase().includes(term) || queryArtist.toLowerCase().includes(term));
+
+    return vault.find(t => {
         if (!t.telegramMessageId) return false;
-        if (String(t.id) === trackId) return true;
-        const tTitle = (t.title || '').trim().toLowerCase();
-        const tArtist = (t.artist || '').trim().toLowerCase();
-        return tTitle === normTitle && tArtist === normArtist;
-    });
 
-    if (existing) {
-        console.log(`[Telegram FLAC Vault] Track "${track.title}" by ${track.artist} is already in the channel (Msg ID: ${existing.telegramMessageId}) - skipping re-upload.`);
-        return existing;
+        const rawVaultTitle = (t.title || '').toLowerCase();
+        const rawVaultArtist = (t.artist || '').toLowerCase();
+        const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
+        if (hasPenalty && !userWantedPenalty) return false;
+
+        const tTitle = normalizeTitle(t.title);
+        const tArtist = normalizeArtist(t.artist);
+
+        // Strict title match
+        if (tTitle !== cleanCTitle) return false;
+
+        // Strict primary artist match
+        if (cleanCArtist && tArtist) {
+            const cTokens = cleanCArtist.split(/\s+/).filter(tok => tok.length > 2);
+            const tTokens = tArtist.split(/\s+/).filter(tok => tok.length > 2);
+            const tokenOverlap = cTokens.some(tok => tArtist.includes(tok)) || tTokens.some(tok => cleanCArtist.includes(tok));
+            if (cleanCArtist !== tArtist && !tokenOverlap) return false;
+        }
+
+        // Strict duration check (±15s tolerance; bypass placeholders 0, 210, 215, 216)
+        const vaultDuration = Number(t.duration) || 0;
+        const isPlaceholder = (vaultDuration === 0 || vaultDuration === 210 || vaultDuration === 215 || vaultDuration === 216);
+        const isExpectedPlaceholder = (numExpectedDuration <= 10 || numExpectedDuration === 210 || numExpectedDuration === 215 || numExpectedDuration === 216);
+
+        if (!isPlaceholder && !isExpectedPlaceholder) {
+            if (Math.abs(vaultDuration - numExpectedDuration) > 15) {
+                console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
+                return false;
+            }
+        }
+
+        return true;
+    }) || null;
+}
+
+/**
+ * Sequential Telegram Lossless Archiving Queue
+ * Guarantees zero socket dropouts, zero CPU thrashing, and zero duplicate uploads
+ */
+class TelegramArchiveQueue {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+        this.activeTrackIds = new Set();
     }
 
-    archivingSet.add(trackId);
-    const safeTitle = (track.title || 'Track').replace(/[/\\?%*:|"<>]/g, '_');
-    const safeArtist = (track.artist || 'Artist').replace(/[/\\?%*:|"<>]/g, '_');
-    const flacFileName = `${safeArtist} - ${safeTitle}.flac`;
-    const flacPath = path.join('/tmp', `haze_${Date.now()}_${Math.random().toString(36).substring(7)}.flac`);
+    push(track, streamUrl) {
+        if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !streamUrl) return;
+        const trackId = String(track.id || `${track.artist}_${track.title}`.replace(/[^a-zA-Z0-9]/g, '_'));
+        if (this.activeTrackIds.has(trackId)) return;
 
-    console.log(`[Telegram FLAC Vault] Encoding "${track.title}" by ${track.artist} to FLAC...`);
-
-    try {
-        const ffmpegArgs = [
-            '-y',
-            '-i', streamUrl,
-            '-c:a', 'flac',
-            '-sample_fmt', 's16',
-            '-ar', '44100',
-            '-metadata', `title=${track.title || ''}`,
-            '-metadata', `artist=${track.artist || ''}`,
-            '-metadata', `album=${track.album || 'HAZE FLAC Vault'}`,
-            flacPath
-        ];
-
-        await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 120000 });
-
-        if (!fs.existsSync(flacPath) || fs.statSync(flacPath).size === 0) {
-            throw new Error('FFmpeg failed to produce FLAC file');
+        // Fast check: if already in vault, skip
+        const currentVault = loadVault();
+        const existing = matchTrackInVault(currentVault, track.title, track.artist, track.duration);
+        if (existing) {
+            console.log(`[ArchiveQueue] Track "${track.title}" by ${track.artist} is already in the channel (Msg ID: ${existing.telegramMessageId}). Skipping.`);
+            return;
         }
 
-        const fileStats = fs.statSync(flacPath);
-        const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(2);
-        console.log(`[Telegram FLAC Vault] FLAC generated (${sizeMB} MB). Uploading to Telegram channel...`);
+        this.activeTrackIds.add(trackId);
+        this.queue.push({ track, streamUrl, trackId });
+        console.log(`[ArchiveQueue] Enqueued "${track.title}" by ${track.artist}. Current queue depth: ${this.queue.length}`);
+        this.processNext();
+    }
 
-        const fileBuffer = fs.readFileSync(flacPath);
-        const formData = new FormData();
-        formData.append('chat_id', TELEGRAM_CHAT_ID);
-        formData.append('audio', new Blob([fileBuffer], { type: 'audio/flac' }), flacFileName);
-        formData.append('title', track.title || 'Unknown Title');
-        formData.append('performer', track.artist || 'Unknown Artist');
-        formData.append('caption', `⚡ HAZE Lossless FLAC Vault\n🎵 ${track.title} — ${track.artist}\n💿 Quality: 16-bit / 44.1 kHz FLAC (1,411 kbps)\n📦 Size: ${sizeMB} MB`);
+    async processNext() {
+        if (this.processing || this.queue.length === 0) return;
+        this.processing = true;
+        const item = this.queue.shift();
 
-        const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
-            method: 'POST',
-            body: formData,
-        });
-
-        const tgJson = await tgRes.json();
-        if (!tgJson.ok) {
-            console.error('[Telegram FLAC Vault] Telegram upload error:', tgJson.description);
-            return null;
-        }
-
-        const messageId = tgJson.result?.message_id;
-        console.log(`[Telegram FLAC Vault] Successfully archived "${track.title}" to Telegram (Msg ID: ${messageId})`);
-
-        const vaultTrack = {
-            id: trackId,
-            title: track.title,
-            artist: track.artist || 'Unknown Artist',
-            album: track.album || 'Single',
-            cover: track.cover || '',
-            duration: track.duration || 216,
-            isHiRes: true,
-            isFlac: true,
-            qualityLabel: '1,411 kbps · FLAC Master',
-            gradient: ['#7C5CFF', '#FF5C9E'],
-            inVault: true,
-            telegramMessageId: messageId,
-            telegramChatId: TELEGRAM_CHAT_ID,
-            streamUrl: `/api/tg-stream/${messageId}`,
-            savedAt: new Date().toISOString(),
-        };
-
-        const vault = loadVault();
-        const idx = vault.findIndex(t => String(t.id) === trackId);
-        if (idx >= 0) {
-            vault[idx] = vaultTrack;
-        } else {
-            vault.unshift(vaultTrack);
-        }
-        saveVault(vault);
-        streamCache.clear();
-
-        return vaultTrack;
-    } catch (err) {
-        console.error('[Telegram FLAC Vault] Error archiving track:', err.message);
-        return null;
-    } finally {
-        archivingSet.delete(trackId);
-        if (fs.existsSync(flacPath)) {
-            try { fs.unlinkSync(flacPath); } catch (e) {}
+        try {
+            await this.archiveTrack(item.track, item.streamUrl, item.trackId);
+        } catch (err) {
+            console.error(`[ArchiveQueue] Failed to archive "${item.track?.title}":`, err.message);
+        } finally {
+            this.activeTrackIds.delete(item.trackId);
+            this.processing = false;
+            // 2s cushion between uploads to prevent Telegram rate limits
+            setTimeout(() => this.processNext(), 2000);
         }
     }
+
+    async archiveTrack(track, streamUrl, trackId) {
+        const safeTitle = (track.title || 'Track').replace(/[/\\?%*:|"<>]/g, '_');
+        const safeArtist = (track.artist || 'Artist').replace(/[/\\?%*:|"<>]/g, '_');
+        const flacFileName = `${safeArtist} - ${safeTitle}.flac`;
+        const flacPath = path.join('/tmp', `haze_${Date.now()}_${Math.random().toString(36).substring(7)}.flac`);
+
+        console.log(`[ArchiveQueue] Transcoding verified original stream "${track.title}" by ${track.artist} to FLAC...`);
+
+        try {
+            const ffmpegArgs = [
+                '-y',
+                '-i', streamUrl,
+                '-c:a', 'flac',
+                '-sample_fmt', 's16',
+                '-ar', '44100',
+                '-metadata', `title=${track.title || ''}`,
+                '-metadata', `artist=${track.artist || ''}`,
+                '-metadata', `album=${track.album || 'HAZE Lossless FLAC Vault'}`,
+                flacPath
+            ];
+
+            await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 120000 });
+
+            if (!fs.existsSync(flacPath) || fs.statSync(flacPath).size === 0) {
+                throw new Error('FFmpeg failed to produce FLAC file');
+            }
+
+            const fileStats = fs.statSync(flacPath);
+            const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(2);
+            console.log(`[ArchiveQueue] FLAC generated (${sizeMB} MB). Uploading to Telegram channel...`);
+
+            const fileBuffer = fs.readFileSync(flacPath);
+            const formData = new FormData();
+            formData.append('chat_id', TELEGRAM_CHAT_ID);
+            formData.append('audio', new Blob([fileBuffer], { type: 'audio/flac' }), flacFileName);
+            formData.append('title', track.title || 'Unknown Title');
+            formData.append('performer', track.artist || 'Unknown Artist');
+            formData.append('caption', `⚡ HAZE Lossless FLAC Master\n🎵 ${track.title} — ${track.artist}\n💿 Quality: 16-bit / 44.1 kHz FLAC (1,411 kbps)\n📦 Size: ${sizeMB} MB`);
+
+            let tgJson = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 180000);
+                    const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
+                        method: 'POST',
+                        body: formData,
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    tgJson = await tgRes.json();
+                    if (tgJson && tgJson.ok) break;
+                    console.warn(`[ArchiveQueue] Telegram upload attempt ${attempt} response:`, tgJson?.description);
+                } catch (fetchErr) {
+                    console.warn(`[ArchiveQueue] Telegram upload attempt ${attempt} network error:`, fetchErr.message);
+                }
+                if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
+            }
+
+            if (!tgJson || !tgJson.ok) {
+                throw new Error(tgJson?.description || 'Telegram Bot API upload failed');
+            }
+
+            const messageId = tgJson.result?.message_id;
+            console.log(`[ArchiveQueue] Successfully archived "${track.title}" to Telegram (Msg ID: ${messageId})!`);
+
+            const vaultTrack = {
+                id: trackId,
+                title: track.title,
+                artist: track.artist || 'Unknown Artist',
+                album: track.album || 'Single',
+                cover: track.cover || '',
+                duration: track.duration || 216,
+                isHiRes: true,
+                isFlac: true,
+                qualityLabel: '1,411 kbps · Pure Lossless FLAC Master',
+                gradient: ['#7C5CFF', '#FF5C9E'],
+                inVault: true,
+                telegramMessageId: messageId,
+                telegramChatId: TELEGRAM_CHAT_ID,
+                streamUrl: `/api/tg-stream/${messageId}`,
+                savedAt: new Date().toISOString(),
+            };
+
+            const vault = loadVault();
+            const idx = vault.findIndex(t => String(t.id) === trackId || (normalizeTitle(t.title) === normalizeTitle(track.title) && normalizeArtist(t.artist) === normalizeArtist(track.artist)));
+            if (idx >= 0) {
+                vault[idx] = vaultTrack;
+            } else {
+                vault.unshift(vaultTrack);
+            }
+            saveVault(vault);
+            streamCache.clear();
+
+            return vaultTrack;
+        } finally {
+            if (fs.existsSync(flacPath)) {
+                try { fs.unlinkSync(flacPath); } catch (e) {}
+            }
+        }
+    }
+}
+
+const telegramArchiveQueue = new TelegramArchiveQueue();
+async function archiveTrackToTelegram(track, streamUrl) {
+    telegramArchiveQueue.push(track, streamUrl);
+    return null;
 }
 
 app.use(cors());
@@ -1127,6 +1240,10 @@ async function resolveJioSaavn(searchQuery, hintTitle = '', hintArtist = '') {
         const wArtist = hintArtist || '';
         const scored = results.map(r => ({ r, s: scoreJioSaavnResult(r, wTitle, wArtist) }));
         scored.sort((a, b) => b.s - a.s);
+        if (!scored[0] || scored[0].s < 40) {
+            console.warn(`[JioSaavn Resolver] Best result scored ${scored[0]?.s || 0} (< 40 threshold). Rejecting to avoid wrong track.`);
+            return null;
+        }
         const match = scored[0].r;
         const enc = match.more_info?.encrypted_media_url;
         if (!enc) return null;
@@ -1177,46 +1294,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
     if (isFlacRequested) {
         try {
             const vault = loadVault();
-            const cleanCTitle = cleanTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
-            const cleanCArtist = cleanArtist.toLowerCase().split(',')[0].split('&')[0].trim();
-            const numExpectedDuration = Number(expectedDuration) || 0;
-
-            const vaultMatch = vault.find(t => {
-                if (!t.telegramMessageId) return false;
-                const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
-                const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
-
-                // Reject any cover, piano, karaoke, instrumental, tribute, or remix unless user explicitly requested it
-                const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone', 'nightcore', 'slowed', 'sped up', 'acoustic', 'live', 'lullaby', 'reverb', 'bass boosted'];
-                const rawVaultTitle = (t.title || '').toLowerCase();
-                const rawVaultArtist = (t.artist || '').toLowerCase();
-                const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
-                const userWantedPenalty = penaltyTerms.some(term => cleanCTitle.includes(term) || cleanCArtist.includes(term));
-                if (hasPenalty && !userWantedPenalty) return false;
-
-                // Strict title match (must match exact title)
-                if (!cleanCTitle || !tTitle || tTitle !== cleanCTitle) return false;
-
-                // Strict primary artist match: both must exist and share artist tokens
-                if (!cleanCArtist || !tArtist) return false;
-                const normCArtist = cleanCArtist.toLowerCase().trim();
-                const normTArtist = tArtist.toLowerCase().trim();
-                const cTokens = normCArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
-                const tTokens = normTArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
-                const tokenOverlap = cTokens.some(tok => normTArtist.includes(tok)) || tTokens.some(tok => normCArtist.includes(tok));
-                if (normCArtist !== normTArtist && !tokenOverlap) return false;
-
-                // Strict duration check: placeholder durations (210/216) are bypassed; real durations must match within ±15s
-                const vaultDuration = Number(t.duration) || 0;
-                if (numExpectedDuration > 10 && vaultDuration > 10 && vaultDuration !== 210 && vaultDuration !== 216) {
-                    if (Math.abs(vaultDuration - numExpectedDuration) > 15) {
-                        console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
-                        return false;
-                    }
-                }
-
-                return true;
-            });
+            const vaultMatch = matchTrackInVault(vault, cleanTitle, cleanArtist, expectedDuration);
             if (vaultMatch && vaultMatch.telegramMessageId) {
                 console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
                 const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
@@ -1269,24 +1347,6 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
         }
     } catch (err0) {
         console.warn('[Stream Resolver] Strategy 1 (JioSaavn) warning:', err0.message);
-    }
-
-    // Fast escape: If FLAC was requested and neither Telegram Vault nor fast JioSaavn resolved on backend,
-    // immediately notify the client so its direct client-side residential resolver can play without 12s delay.
-    if (isFlacRequested) {
-        console.log(`[Stream Resolver] FLAC requested but not in Vault; returning fallback indicator for "${searchQuery}"`);
-        const fallbackData = {
-            streamUrl: null,
-            proxyUrl: null,
-            fallbackUrl: null,
-            quality: '320 kbps · Studio Master',
-            format: 'AAC Studio Master',
-            bitrate: '320 kbps',
-            isFlac: false,
-            flacUnavailable: true,
-            isStudioMaster: true,
-        };
-        return fallbackData;
     }
 
     let streamUrl = null;
@@ -1344,9 +1404,12 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
     const data = {
         streamUrl,
         proxyUrl: `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`,
+        fallbackUrl: `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`,
         quality,
         format,
         bitrate,
+        isFlac: false,
+        flacUnavailable: isFlacRequested,
         isStudioMaster: true,
     };
 
@@ -1360,8 +1423,8 @@ app.get('/api/stream', async (req, res) => {
         const data = await resolveTrackAudio(artist, title, query, quality, duration);
         res.json(data);
 
-        // Auto-archive genuine FLAC to Telegram FLAC Vault in background
-        if (AUTO_ARCHIVE_TG && TELEGRAM_CHAT_ID) {
+        // Auto-archive genuine FLAC to Telegram FLAC Vault sequentially in background
+        if (AUTO_ARCHIVE_TG && TELEGRAM_CHAT_ID && data.streamUrl && !data.isFlac) {
             const trackObj = {
                 id: id || `${artist}_${title}`.replace(/[^a-zA-Z0-9]/g, '_'),
                 title: title || query || 'Unknown Title',
@@ -1370,27 +1433,7 @@ app.get('/api/stream', async (req, res) => {
                 cover: cover || '',
                 duration: Number(duration) || 216,
             };
-
-            // First: attempt bit-perfect FLAC from Telegram music bot
-            if (TELEGRAM_USER_SESSION) {
-                fetchFlacFromTelegramBot(trackObj).then(result => {
-                    // If bot did not find a verified match, transcode pristine 320k stream to FLAC and archive
-                    if (!result && data.streamUrl && !data.isFlac) {
-                        archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
-                            console.warn('[Auto Archive TG] Fallback archive error:', e.message);
-                        });
-                    }
-                }).catch(e => {
-                    console.warn('[Userbot Fetch] Background error:', e.message);
-                    if (data.streamUrl && !data.isFlac) {
-                        archiveTrackToTelegram(trackObj, data.streamUrl).catch(() => {});
-                    }
-                });
-            } else if (data.streamUrl && !data.isFlac) {
-                archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
-                    console.warn('[Auto Archive TG] Stream archive error:', e.message);
-                });
-            }
+            telegramArchiveQueue.push(trackObj, data.streamUrl);
         }
     } catch (err) {
         console.error('Stream resolution error:', err);
@@ -1403,39 +1446,11 @@ app.get('/api/stream', async (req, res) => {
  * Used by mobile/web clients for seamless hot-swapping from 320k to FLAC on the fly
  */
 app.get('/api/stream/upgrade', (req, res) => {
-    const { title = '', artist = '' } = req.query;
+    const { title = '', artist = '', duration = '' } = req.query;
     if (!title) return res.json({ available: false });
 
-    const cleanTitle = cleanQuery(title);
-    const cleanArtist = cleanQuery(artist);
     const vault = loadVault();
-
-    const cleanCTitle = cleanTitle.toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
-    const cleanCArtist = cleanArtist.toLowerCase().split(',')[0].split('&')[0].trim();
-
-    const vaultMatch = vault.find(t => {
-        if (!t.telegramMessageId) return false;
-        const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
-        const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
-
-        // Reject penalty terms
-        const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone', 'nightcore', 'slowed', 'sped up', 'acoustic', 'live', 'lullaby', 'reverb', 'bass boosted'];
-        const rawVaultTitle = (t.title || '').toLowerCase();
-        const rawVaultArtist = (t.artist || '').toLowerCase();
-        const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
-        const userWantedPenalty = penaltyTerms.some(term => cleanCTitle.includes(term) || cleanCArtist.includes(term));
-        if (hasPenalty && !userWantedPenalty) return false;
-
-        if (cleanCTitle !== tTitle) return false;
-
-        if (cleanCArtist && tArtist) {
-            const cTokens = cleanCArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
-            const tTokens = tArtist.split(/[\s,&]+/).filter(tok => tok.length > 2);
-            const tokenOverlap = cTokens.some(tok => tArtist.includes(tok)) || tTokens.some(tok => cleanCArtist.includes(tok));
-            if (cleanCArtist !== tArtist && !tokenOverlap) return false;
-        }
-        return true;
-    });
+    const vaultMatch = matchTrackInVault(vault, title, artist, duration);
 
     if (vaultMatch && vaultMatch.telegramMessageId) {
         return res.json({

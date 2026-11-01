@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "id": "The_Weeknd_Starboy",
+    "title": "Starboy",
+    "artist": "The Weeknd",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 231,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/231",
+    "savedAt": "2026-11-01T22:53:02.981Z"
+  },
+  {
+    "id": "Sai_Abhyankkar_Alaakaa_Loova",
+    "title": "Alaakaa Loova",
+    "artist": "Sai Abhyankkar",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "isFlac": true,
+    "qualityLabel": "1,411 kbps · Pure Lossless FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 218,
+    "telegramChatId": "-1004360746369",
+    "streamUrl": "/api/tg-stream/218",
+    "savedAt": "2026-11-01T22:44:32.916Z"
+  }
+]

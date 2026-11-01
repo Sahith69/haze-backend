@@ -1187,7 +1187,7 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
 
                 // Reject any cover, piano, karaoke, instrumental, tribute, or remix unless user explicitly requested it
-                const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone'];
+                const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone', 'nightcore', 'slowed', 'sped up', 'acoustic', 'live', 'lullaby', 'reverb', 'bass boosted'];
                 const rawVaultTitle = (t.title || '').toLowerCase();
                 const rawVaultArtist = (t.artist || '').toLowerCase();
                 const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
@@ -1206,10 +1206,10 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 const tokenOverlap = cTokens.some(tok => normTArtist.includes(tok)) || tTokens.some(tok => normCArtist.includes(tok));
                 if (normCArtist !== normTArtist && !tokenOverlap) return false;
 
-                // Strict duration check: placeholder durations (210/216) are bypassed; real durations must match within ±60s
+                // Strict duration check: placeholder durations (210/216) are bypassed; real durations must match within ±15s
                 const vaultDuration = Number(t.duration) || 0;
                 if (numExpectedDuration > 10 && vaultDuration > 10 && vaultDuration !== 210 && vaultDuration !== 216) {
-                    if (Math.abs(vaultDuration - numExpectedDuration) > 60) {
+                    if (Math.abs(vaultDuration - numExpectedDuration) > 15) {
                         console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
                         return false;
                     }
@@ -1417,6 +1417,15 @@ app.get('/api/stream/upgrade', (req, res) => {
         if (!t.telegramMessageId) return false;
         const tTitle = (t.title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
         const tArtist = (t.artist || '').toLowerCase().split(',')[0].split('&')[0].trim();
+
+        // Reject penalty terms
+        const penaltyTerms = ['cover', 'piano', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'quartet', 'remix', 'ringtone', 'nightcore', 'slowed', 'sped up', 'acoustic', 'live', 'lullaby', 'reverb', 'bass boosted'];
+        const rawVaultTitle = (t.title || '').toLowerCase();
+        const rawVaultArtist = (t.artist || '').toLowerCase();
+        const hasPenalty = penaltyTerms.some(term => rawVaultTitle.includes(term) || rawVaultArtist.includes(term));
+        const userWantedPenalty = penaltyTerms.some(term => cleanCTitle.includes(term) || cleanCArtist.includes(term));
+        if (hasPenalty && !userWantedPenalty) return false;
+
         if (cleanCTitle !== tTitle) return false;
 
         if (cleanCArtist && tArtist) {

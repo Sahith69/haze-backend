@@ -340,8 +340,14 @@ function saveVault(data) {
 /**
  * Universal Title & Artist Normalizer for 100% Precise Cross-Catalog Matching
  */
+function extractLanguage(raw = '') {
+    const match = (raw || '').match(/\[(Tamil|Telugu|Hindi|Malayalam|Kannada|Punjabi|Bhojpuri|Bengali|Marathi|Gujarati|English)\]|\((Tamil|Telugu|Hindi|Malayalam|Kannada|Punjabi|Bhojpuri|Bengali|Marathi|Gujarati|English)\)/i);
+    return match ? (match[1] || match[2]).toLowerCase() : null;
+}
+
 function normalizeTitle(raw = '') {
-    return (raw || '')
+    const lang = extractLanguage(raw);
+    const cleaned = (raw || '')
         .toLowerCase()
         .replace(/\(.*?\)|\[.*?\]/g, '') // remove parenthetical content like (feat. X), [Remastered]
         .replace(/\s*-\s*((\d{4}\s+)?remaster(ed)?(\s*\d+)?|single version|radio edit|bonus track|original mix|extended mix|album version|feat\.?.*).*$/i, '')
@@ -350,6 +356,8 @@ function normalizeTitle(raw = '') {
         .replace(/[^a-z0-9\s]/g, '') // strip other punctuation: "don't" -> "dont"
         .replace(/\s+/g, ' ')
         .trim();
+
+    return lang ? `${cleaned} ${lang}` : cleaned;
 }
 
 function normalizeArtist(raw = '') {
@@ -1217,6 +1225,15 @@ function scoreJioSaavnResult(result, wantedTitle = '', wantedArtist = '') {
     const wantedPenalty = PENALTY_TERMS.some(pt => wTitle.includes(pt) || wArtist.includes(pt));
     const hasPenalty = PENALTY_TERMS.some(pt => (result.title || '').toLowerCase().includes(pt));
     if (hasPenalty && !wantedPenalty) score -= 150;
+
+    // Strict language match for multi-language regional songs (Telugu, Tamil, Hindi, etc.)
+    const wLang = (wantedTitle || '').match(/\[(Tamil|Telugu|Hindi|Malayalam|Kannada|Punjabi|Bhojpuri|Bengali|Marathi|Gujarati|English)\]|\((Tamil|Telugu|Hindi|Malayalam|Kannada|Punjabi|Bhojpuri|Bengali|Marathi|Gujarati|English)\)/i);
+    if (wLang) {
+        const targetLang = (wLang[1] || wLang[2]).toLowerCase();
+        const rHasLang = (result.title || '').toLowerCase().includes(targetLang) || (result.subtitle || '').toLowerCase().includes(targetLang) || (result.more_info?.language || '').toLowerCase() === targetLang;
+        if (rHasLang) score += 60;
+        else score -= 120; // Heavy penalty if wrong language version!
+    }
 
     return score;
 }

@@ -1322,19 +1322,10 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                 console.log(`[Stream Resolver] Matched Telegram MTProto Lossless FLAC Master for: "${searchQuery}" (Msg ID: ${vaultMatch.telegramMessageId})`);
                 const streamPath = `/api/tg-stream/${vaultMatch.telegramMessageId}`;
 
-                // Resolve Saavn 320k stream concurrently as instant fallback
-                let fallbackStreamUrl = null;
-                try {
-                    const saavnFallback = await resolveJioSaavn(searchQuery, cleanTitle, cleanArtist);
-                    if (saavnFallback && saavnFallback.streamUrl) {
-                        fallbackStreamUrl = saavnFallback.streamUrl;
-                    }
-                } catch (e) {}
-
                 const data = {
                     streamUrl: streamPath,
                     proxyUrl: streamPath,
-                    fallbackUrl: fallbackStreamUrl,
+                    fallbackUrl: null,
                     quality: vaultMatch.qualityLabel || '1,411 kbps · Pure Lossless FLAC Master',
                     format: '16-bit / 44.1 kHz FLAC Master',
                     bitrate: '1,411 kbps',
@@ -1347,6 +1338,20 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
         } catch (errTg) {
             console.warn('[Stream Resolver] Telegram Vault check warning:', errTg.message);
         }
+
+        // Fast-path: When FLAC is requested and not yet in Vault, return immediately in <10ms!
+        // Prevents cloud datacenter IP blocks and 16-second timeouts on YouTube/SoundCloud.
+        return {
+            streamUrl: null,
+            proxyUrl: null,
+            fallbackUrl: null,
+            quality: '320 kbps · Studio Master',
+            format: '320kbps Studio Master',
+            bitrate: '320 kbps',
+            isFlac: false,
+            flacUnavailable: true,
+            message: 'Track not in Telegram FLAC Vault yet'
+        };
     }
 
     // Strategy 1: Direct JioSaavn 320kbps Studio Master (lightning fast < 1s, zero cloud IP blocks)

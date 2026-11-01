@@ -1145,10 +1145,10 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
                     if (!artistMatches) return false;
                 }
 
-                // Strict duration check with ±4s tolerance window (accounts for CD pregap silence)
+                // Strict duration check: placeholder durations (210/216) are bypassed; real durations must match within ±60s
                 const vaultDuration = Number(t.duration) || 0;
-                if (numExpectedDuration > 10 && vaultDuration > 10) {
-                    if (Math.abs(vaultDuration - numExpectedDuration) > 4) {
+                if (numExpectedDuration > 10 && vaultDuration > 10 && vaultDuration !== 210 && vaultDuration !== 216) {
+                    if (Math.abs(vaultDuration - numExpectedDuration) > 60) {
                         console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
                         return false;
                     }
@@ -1208,6 +1208,24 @@ async function resolveTrackAudio(artist = '', title = '', query = '', requestedQ
         }
     } catch (err0) {
         console.warn('[Stream Resolver] Strategy 1 (JioSaavn) warning:', err0.message);
+    }
+
+    // Fast escape: If FLAC was requested and neither Telegram Vault nor fast JioSaavn resolved on backend,
+    // immediately notify the client so its direct client-side residential resolver can play without 12s delay.
+    if (isFlacRequested) {
+        console.log(`[Stream Resolver] FLAC requested but not in Vault; returning fallback indicator for "${searchQuery}"`);
+        const fallbackData = {
+            streamUrl: null,
+            proxyUrl: null,
+            fallbackUrl: null,
+            quality: '320 kbps · Studio Master',
+            format: 'AAC Studio Master',
+            bitrate: '320 kbps',
+            isFlac: false,
+            flacUnavailable: true,
+            isStudioMaster: true,
+        };
+        return fallbackData;
     }
 
     let streamUrl = null;

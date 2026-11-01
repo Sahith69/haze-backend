@@ -1,1 +1,38 @@
-[]
+[
+  {
+    "id": "The_Weeknd_Starboy",
+    "title": "Starboy",
+    "artist": "The Weeknd",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 115,
+    "telegramChatId": "-1004360746369",
+    "savedAt": "2026-11-01T17:46:37.564Z"
+  },
+  {
+    "id": "Billie_Eilish_BIRDS_OF_A_FEATHER",
+    "title": "BIRDS OF A FEATHER",
+    "artist": "Billie Eilish",
+    "album": "HAZE FLAC Vault",
+    "cover": "",
+    "duration": 216,
+    "isHiRes": true,
+    "qualityLabel": "1,411 kbps · FLAC Master",
+    "gradient": [
+      "#7C5CFF",
+      "#FF5C9E"
+    ],
+    "inVault": true,
+    "telegramMessageId": 114,
+    "telegramChatId": "-1004360746369",
+    "savedAt": "2026-11-01T17:44:48.103Z"
+  }
+]

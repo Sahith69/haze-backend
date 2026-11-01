@@ -144,6 +144,23 @@ async function getTelegramUserClient() {
 const flacFetchingSet = new Set();
 async function fetchFlacFromTelegramBot(track) {
     if (!TELEGRAM_USER_SESSION || !TELEGRAM_CHAT_ID) return null;
+
+    const normTitle = (track.title || '').toLowerCase().trim();
+    const normArtist = (track.artist || '').toLowerCase().trim();
+
+    // Skip if already archived in vault
+    const currentVault = loadVault();
+    const existing = currentVault.find(t => {
+        if (!t.telegramMessageId) return false;
+        const tTitle = (t.title || '').trim().toLowerCase();
+        const tArtist = (t.artist || '').trim().toLowerCase();
+        return tTitle === normTitle && tArtist === normArtist;
+    });
+    if (existing) {
+        console.log(`[Telegram Userbot] Track "${track.title}" is already in vault (Msg ID: ${existing.telegramMessageId}) - skipping fetch.`);
+        return existing.telegramMessageId;
+    }
+
     const userClient = await getTelegramUserClient();
     if (!userClient) return null;
 
@@ -166,20 +183,36 @@ async function fetchFlacFromTelegramBot(track) {
         }));
 
         if (results.results && results.results.length > 0) {
-            const normTitle = (track.title || '').toLowerCase().trim();
-            const normArtist = (track.artist || '').toLowerCase().trim();
+            const PENALTY_TERMS = ['cover', 'karaoke', 'instrumental', 'tribute', 'originally performed', 'remix', 'ringtone', 'piano', 'slowed', 'sped up', 'nightcore', 'lullaby'];
 
-            // Prioritize exact match where description contains artist and title contains track title
+            // Match exact artist + title without penalty terms
             const matched = results.results.find(r => {
                 const desc = (r.description || '').toLowerCase();
                 const title = (r.title || '').toLowerCase();
-                return desc.includes(normArtist) && (title.includes(normTitle) || normTitle.includes(title));
-            }) || results.results.find(r => {
-                const title = (r.title || '').toLowerCase();
-                return title.includes(normTitle) || normTitle.includes(title);
-            }) || results.results[0];
+                const hasPenalty = PENALTY_TERMS.some(p => title.includes(p) || desc.includes(p));
+                if (hasPenalty) return false;
 
-            console.log(`[Telegram Userbot] Found best FLAC match: "${matched.title}" (${matched.description?.replace(/\n/g, ' ') || ''}) [ID: ${matched.id}]. Posting to channel...`);
+                const artistMatch = desc.includes(normArtist) || normArtist.includes(desc);
+                const titleMatch = title.includes(normTitle) || normTitle.includes(title);
+                return artistMatch && titleMatch;
+            }) || results.results.find(r => {
+                const desc = (r.description || '').toLowerCase();
+                const title = (r.title || '').toLowerCase();
+                const hasPenalty = PENALTY_TERMS.some(p => title.includes(p) || desc.includes(p));
+                if (hasPenalty) return false;
+
+                const aTokens = normArtist.split(/[\s,&]+/).filter(t => t.length > 2);
+                const aMatch = aTokens.length === 0 || aTokens.some(t => desc.includes(t) || title.includes(t));
+                const titleMatch = title.includes(normTitle) || normTitle.includes(title);
+                return aMatch && titleMatch;
+            });
+
+            if (!matched) {
+                console.log(`[Telegram Userbot] No verified bit-perfect FLAC match for "${queryKey}" from bot (avoided covers/remixes).`);
+                return null;
+            }
+
+            console.log(`[Telegram Userbot] Verified bit-perfect FLAC match: "${matched.title}" (${matched.description?.replace(/\n/g, ' ') || ''}) [ID: ${matched.id}]. Posting to channel...`);
 
             await userClient.invoke(new Api.messages.SendInlineBotResult({
                 peer: channelPeer,
@@ -223,7 +256,12 @@ async function syncTelegramChannelFiles() {
         const channelPeer = TELEGRAM_CHAT_ID.startsWith('-100') ? Number(TELEGRAM_CHAT_ID) : TELEGRAM_CHAT_ID;
         console.log(`[GramJS MTProto] Indexing audio files from channel ${channelPeer}...`);
         const messages = await userClient.getMessages(channelPeer, { limit: 100 });
-        const vault = loadVault();
+        let vault = loadVault();
+
+        // Prune any tracks in vault that were deleted from the channel
+        const currentChannelMsgIds = new Set(messages.map(m => m.id));
+        vault = vault.filter(t => !t.telegramMessageId || currentChannelMsgIds.has(t.telegramMessageId));
+
         let addedCount = 0;
 
         for (const msg of messages) {
@@ -272,6 +310,7 @@ async function syncTelegramChannelFiles() {
         }
 
         saveVault(vault);
+        streamCache.clear();
         console.log(`[GramJS MTProto] Channel sync completed. Total tracks in vault: ${vault.length} (indexed ${addedCount} new)`);
         return vault;
     } catch (err) {
@@ -402,6 +441,7 @@ async function archiveTrackToTelegram(track, streamUrl) {
             vault.unshift(vaultTrack);
         }
         saveVault(vault);
+        streamCache.clear();
 
         return vaultTrack;
     } catch (err) {
@@ -1317,6 +1357,39 @@ app.get('/api/stream', async (req, res) => {
     try {
         const data = await resolveTrackAudio(artist, title, query, quality, duration);
         res.json(data);
+
+        // Auto-archive genuine FLAC to Telegram FLAC Vault in background
+        if (AUTO_ARCHIVE_TG && TELEGRAM_CHAT_ID) {
+            const trackObj = {
+                id: id || `${artist}_${title}`.replace(/[^a-zA-Z0-9]/g, '_'),
+                title: title || query || 'Unknown Title',
+                artist: artist || 'Unknown Artist',
+                album: album || 'HAZE FLAC Vault',
+                cover: cover || '',
+                duration: Number(duration) || 216,
+            };
+
+            // First: attempt bit-perfect FLAC from Telegram music bot
+            if (TELEGRAM_USER_SESSION) {
+                fetchFlacFromTelegramBot(trackObj).then(result => {
+                    // If bot did not find a verified match, transcode pristine 320k stream to FLAC and archive
+                    if (!result && data.streamUrl && !data.isFlac) {
+                        archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
+                            console.warn('[Auto Archive TG] Fallback archive error:', e.message);
+                        });
+                    }
+                }).catch(e => {
+                    console.warn('[Userbot Fetch] Background error:', e.message);
+                    if (data.streamUrl && !data.isFlac) {
+                        archiveTrackToTelegram(trackObj, data.streamUrl).catch(() => {});
+                    }
+                });
+            } else if (data.streamUrl && !data.isFlac) {
+                archiveTrackToTelegram(trackObj, data.streamUrl).catch(e => {
+                    console.warn('[Auto Archive TG] Stream archive error:', e.message);
+                });
+            }
+        }
     } catch (err) {
         console.error('Stream resolution error:', err);
         res.status(500).json({ error: 'Failed to resolve audio stream', details: err.message });
@@ -1724,6 +1797,7 @@ app.post('/api/vault/save', async (req, res) => {
             vault.unshift(newTrack);
         }
         saveVault(vault);
+        streamCache.clear();
 
         res.json({
             success: true,

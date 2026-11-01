@@ -365,8 +365,14 @@ function normalizeArtist(raw = '') {
 /**
  * Single source of truth for matching any track against the Telegram FLAC Vault
  */
-function matchTrackInVault(vault, queryTitle = '', queryArtist = '', expectedDuration = 0) {
+function matchTrackInVault(vault, queryTitle = '', queryArtist = '', expectedDuration = 0, trackId = '') {
     if (!Array.isArray(vault) || vault.length === 0) return null;
+
+    // 1. Direct ID match if available
+    if (trackId) {
+        const idMatch = vault.find(t => t.telegramMessageId && String(t.id) === String(trackId));
+        if (idMatch) return idMatch;
+    }
 
     const cleanCTitle = normalizeTitle(queryTitle);
     const cleanCArtist = normalizeArtist(queryArtist);
@@ -1446,11 +1452,11 @@ app.get('/api/stream', async (req, res) => {
  * Used by mobile/web clients for seamless hot-swapping from 320k to FLAC on the fly
  */
 app.get('/api/stream/upgrade', (req, res) => {
-    const { title = '', artist = '', duration = '' } = req.query;
-    if (!title) return res.json({ available: false });
+    const { title = '', artist = '', duration = '', id = '' } = req.query;
+    if (!title && !id) return res.json({ available: false });
 
     const vault = loadVault();
-    const vaultMatch = matchTrackInVault(vault, title, artist, duration);
+    const vaultMatch = matchTrackInVault(vault, title, artist, duration, id);
 
     if (vaultMatch && vaultMatch.telegramMessageId) {
         return res.json({

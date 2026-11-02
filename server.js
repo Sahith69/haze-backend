@@ -275,7 +275,11 @@ async function syncTelegramChannelFiles() {
             if (isAudio) {
                 const title = audioAttr?.title || (msg.message ? msg.message.split('\n')[1]?.replace('🎵', '').trim() : '') || `Track #${msg.id}`;
                 const artist = audioAttr?.performer || 'Unknown Artist';
-                const duration = audioAttr?.duration || 210;
+                let duration = Number(audioAttr?.duration) || 0;
+                if (duration === 0 && doc.size) {
+                    // Approximate duration from file size for 16-bit 44.1kHz FLAC (~110,000 bytes/sec)
+                    duration = Math.round(Number(doc.size) / 110000);
+                }
                 const isFlac = doc.mimeType?.includes('flac') || doc.mimeType?.includes('x-flac') || doc.attributes?.some(a => a.fileName?.toLowerCase().endsWith('.flac'));
 
                 const trackId = `tg_${msg.id}`;
@@ -412,12 +416,13 @@ function matchTrackInVault(vault, queryTitle = '', queryArtist = '', expectedDur
             if (cleanCArtist !== tArtist && !tokenOverlap) return false;
         }
 
-        // Strict duration check (±15s tolerance; bypass placeholders 0, 210, 215, 216)
+        // Strict duration check (±15s tolerance)
         const vaultDuration = Number(t.duration) || 0;
-        const isPlaceholder = (vaultDuration === 0 || vaultDuration === 210 || vaultDuration === 215 || vaultDuration === 216);
-        const isExpectedPlaceholder = (numExpectedDuration <= 10 || numExpectedDuration === 210 || numExpectedDuration === 215 || numExpectedDuration === 216);
-
-        if (!isPlaceholder && !isExpectedPlaceholder) {
+        if (numExpectedDuration > 10) {
+            if (vaultDuration <= 0) {
+                console.warn(`[Vault Check] Rejecting "${tTitle}": zero/missing duration in vault.`);
+                return false;
+            }
             if (Math.abs(vaultDuration - numExpectedDuration) > 15) {
                 console.warn(`[Vault Check] Duration mismatch for "${tTitle}": expected ${numExpectedDuration}s, vault has ${vaultDuration}s. Rejecting.`);
                 return false;
@@ -504,7 +509,28 @@ class TelegramArchiveQueue {
 
             const fileStats = fs.statSync(flacPath);
             const sizeMB = (fileStats.size / (1024 * 1024)).toFixed(2);
-            console.log(`[ArchiveQueue] FLAC generated (${sizeMB} MB). Uploading to Telegram channel...`);
+
+            // Verify real output duration with ffprobe to detect incomplete/corrupt streams
+            let realDuration = 0;
+            try {
+                const probeRes = await execFileAsync('ffprobe', [
+                    '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1',
+                    flacPath
+                ]);
+                realDuration = Math.round(parseFloat(probeRes.stdout.trim()) || 0);
+            } catch (probeErr) {
+                console.warn('[ArchiveQueue] ffprobe duration check warning:', probeErr.message);
+            }
+
+            const expectedSec = Number(track.duration) || 0;
+            if (expectedSec > 10 && realDuration > 0 && Math.abs(realDuration - expectedSec) > 15) {
+                console.error(`[ArchiveQueue] Duration mismatch! Expected ${expectedSec}s, but produced FLAC is ${realDuration}s. Aborting upload to prevent storing corrupted/shortened track.`);
+                throw new Error(`Duration mismatch: generated FLAC duration ${realDuration}s does not match expected ${expectedSec}s`);
+            }
+
+            console.log(`[ArchiveQueue] FLAC generated (${sizeMB} MB, ${realDuration || expectedSec}s). Uploading to Telegram channel...`);
 
             const fileBuffer = fs.readFileSync(flacPath);
             const formData = new FormData();
@@ -512,7 +538,8 @@ class TelegramArchiveQueue {
             formData.append('audio', new Blob([fileBuffer], { type: 'audio/flac' }), flacFileName);
             formData.append('title', track.title || 'Unknown Title');
             formData.append('performer', track.artist || 'Unknown Artist');
-            formData.append('caption', `⚡ HAZE Lossless FLAC Master\n🎵 ${track.title} — ${track.artist}\n💿 Quality: 16-bit / 44.1 kHz FLAC (1,411 kbps)\n📦 Size: ${sizeMB} MB`);
+            formData.append('duration', String(realDuration || expectedSec || 0));
+            formData.append('caption', `⚡ HAZE Lossless FLAC Master\n🎵 ${track.title} — ${track.artist}\n💿 Quality: 16-bit / 44.1 kHz FLAC (1,411 kbps)\n⏱️ Duration: ${Math.floor((realDuration || expectedSec) / 60)}:${String((realDuration || expectedSec) % 60).padStart(2, '0')}\n📦 Size: ${sizeMB} MB`);
 
             let tgJson = null;
             for (let attempt = 1; attempt <= 2; attempt++) {
@@ -547,7 +574,7 @@ class TelegramArchiveQueue {
                 artist: track.artist || 'Unknown Artist',
                 album: track.album || 'Single',
                 cover: track.cover || '',
-                duration: track.duration || 216,
+                duration: realDuration || track.duration || 216,
                 isHiRes: true,
                 isFlac: true,
                 qualityLabel: '1,411 kbps · Pure Lossless FLAC Master',
